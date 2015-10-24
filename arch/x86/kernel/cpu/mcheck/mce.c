@@ -102,6 +102,8 @@ DEFINE_PER_CPU(mce_banks_t, mce_poll_banks) = {
 
 static DEFINE_PER_CPU(struct work_struct, mce_work);
 
+static struct device *mce_devices[NR_CPUS];
+
 /*
  * CPU/chipset specific EDAC code can register a notifier call here to print
  * MCE errors in a human-readable form.
@@ -1894,7 +1896,18 @@ static int mce_syscore_suspend(void)
 
 static void mce_syscore_shutdown(void)
 {
+	int i = 0;
+	struct device *dev;
+
 	mce_disable_error_reporting();
+
+	for (i = 0; i < NR_CPUS; i++) {
+		dev = mce_devices[i];
+		if (dev) {
+			device_unregister(dev);
+			mce_devices[i] = NULL;
+		}
+	}
 }
 
 /*
@@ -2107,23 +2120,26 @@ static void mce_device_release(struct device *dev)
 static __cpuinit int mce_device_create(unsigned int cpu)
 {
 	struct device *dev;
-	int err;
+	int err = 0;
 	int i, j;
 
 	if (!mce_available(&boot_cpu_data))
 		return -EIO;
 
-	dev = kzalloc(sizeof *dev, GFP_KERNEL);
-	if (!dev)
-		return -ENOMEM;
-	dev->id  = cpu;
-	dev->bus = &mce_subsys;
-	dev->release = &mce_device_release;
+	dev = mce_devices[cpu];
+	if (!dev) {
+		dev = kzalloc(sizeof *dev, GFP_KERNEL);
+		if (!dev)
+			return -ENOMEM;
+		dev->id  = cpu;
+		dev->bus = &mce_subsys;
+		dev->release = &mce_device_release;
 
-	err = device_register(dev);
-	if (err)
-		return err;
-
+		err = device_register(dev);
+		if (err)
+			return err;
+		mce_devices[cpu] = dev;
+	}
 	for (i = 0; mce_device_attrs[i]; i++) {
 		err = device_create_file(dev, mce_device_attrs[i]);
 		if (err)
@@ -2146,6 +2162,7 @@ error:
 		device_remove_file(dev, mce_device_attrs[i]);
 
 	device_unregister(dev);
+	mce_devices[cpu] = NULL;
 
 	return err;
 }
@@ -2164,7 +2181,6 @@ static __cpuinit void mce_device_remove(unsigned int cpu)
 	for (i = 0; i < banks; i++)
 		device_remove_file(dev, &mce_banks[i].attr);
 
-	device_unregister(dev);
 	cpumask_clear_cpu(cpu, mce_device_initialized);
 	per_cpu(mce_device, cpu) = NULL;
 }
@@ -2287,6 +2303,7 @@ static __init int mcheck_init_device(void)
 		return err;
 
 	for_each_online_cpu(i) {
+		mce_devices[i] = NULL;
 		err = mce_device_create(i);
 		if (err)
 			return err;
@@ -2296,7 +2313,7 @@ static __init int mcheck_init_device(void)
 	register_hotcpu_notifier(&mce_cpu_notifier);
 
 	/* register character device /dev/mcelog */
-	misc_register(&mce_chrdev_device);
+	err = misc_register(&mce_chrdev_device);
 
 	return err;
 }

@@ -602,7 +602,10 @@ static void __init __pci_mmcfg_init(int early)
 	if (!known_bridge)
 		acpi_sfi_table_parse(ACPI_SIG_MCFG, pci_parse_mcfg);
 
-	pci_mmcfg_reject_broken(early);
+#ifdef CONFIG_XEN
+	if (!xen_start_info)
+#endif
+		pci_mmcfg_reject_broken(early);
 
 	if (list_empty(&pci_mmcfg_list))
 		return;

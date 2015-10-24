@@ -48,7 +48,8 @@
 #include <xen/interface/sched.h>
 #include <xen/interface/physdev.h>
 #include <xen/interface/platform.h>
-
+#include <asm/sec_addon.h>
+#include <xen/interface/vcpu.h>
 /*
  * The hypercall asms have to meet several constraints:
  * - Work on 32- and 64-bit.
@@ -203,6 +204,28 @@ extern struct { char _entry[32]; } hypercall_page[];
 	(type)__res;							\
 })
 
+#ifdef CONFIG_SEC_DEBUG_XEN
+#define DECLEAR_SEC_HYPERCALLY(op, argc, arg1,arg2,arg3, arg4, arg5) \
+	int res;												\
+	sec_debug_hypercall_log(								\
+		__HYPERVISOR_##op, 1, (argc),						\
+		(unsigned int)(arg1),								\
+		(unsigned int)(arg2),								\
+		(unsigned int)(arg3),								\
+		(unsigned int)(arg4),								\
+		(unsigned int)(arg5));
+#define RELEASE_SEC_HYPERCALLY(op, res)					\
+	sec_debug_hypercall_log(							\
+		__HYPERVISOR_##op, 2, (res),					\
+		0, 0, 0, 0, 0);									\
+	return res;
+#else
+#define DECLEAR_SEC_HYPERCALLY(op, argc, arg1,arg2,arg3, arg4, arg5) \
+	int res;
+#define RELEASE_SEC_HYPERCALLY(op, res)					\
+	return res;
+#endif	/* CONFIG_SEC_DEBUG_XEN */
+
 static inline long
 privcmd_call(unsigned call,
 	     unsigned long a1, unsigned long a2,
@@ -223,33 +246,47 @@ privcmd_call(unsigned call,
 static inline int
 HYPERVISOR_set_trap_table(struct trap_info *table)
 {
-	return _hypercall1(int, set_trap_table, table);
+	DECLEAR_SEC_HYPERCALLY(set_trap_table, 0, 0, 0, 0, 0, 0)
+	res = _hypercall1(int, set_trap_table, table);
+	RELEASE_SEC_HYPERCALLY(set_trap_table, res);
 }
 
 static inline int
 HYPERVISOR_mmu_update(struct mmu_update *req, int count,
 		      int *success_count, domid_t domid)
 {
-	return _hypercall4(int, mmu_update, req, count, success_count, domid);
+	DECLEAR_SEC_HYPERCALLY(mmu_update, 4,
+		req, count, success_count, domid, 0);
+	res = _hypercall4(int, mmu_update, req, count, success_count, domid);
+	RELEASE_SEC_HYPERCALLY(mmu_update, res);
 }
 
 static inline int
 HYPERVISOR_mmuext_op(struct mmuext_op *op, int count,
 		     int *success_count, domid_t domid)
 {
-	return _hypercall4(int, mmuext_op, op, count, success_count, domid);
+	DECLEAR_SEC_HYPERCALLY(mmuext_op, 4,
+		op, count, success_count, domid, 0);
+	res = _hypercall4(int, mmuext_op, op, count, success_count, domid);
+	RELEASE_SEC_HYPERCALLY(mmuext_op, res);
 }
 
 static inline int
 HYPERVISOR_set_gdt(unsigned long *frame_list, int entries)
 {
-	return _hypercall2(int, set_gdt, frame_list, entries);
+	DECLEAR_SEC_HYPERCALLY(set_gdt, 1,
+		entries, 0, 0, 0, 0);
+	res = _hypercall2(int, set_gdt, frame_list, entries);
+	RELEASE_SEC_HYPERCALLY(set_gdt, res);
 }
 
 static inline int
 HYPERVISOR_stack_switch(unsigned long ss, unsigned long esp)
 {
-	return _hypercall2(int, stack_switch, ss, esp);
+	DECLEAR_SEC_HYPERCALLY(stack_switch, 2,
+		ss, esp, 0, 0, 0);
+	res = _hypercall2(int, stack_switch, ss, esp);
+	RELEASE_SEC_HYPERCALLY(stack_switch, res);
 }
 
 #ifdef CONFIG_X86_32
@@ -259,9 +296,12 @@ HYPERVISOR_set_callbacks(unsigned long event_selector,
 			 unsigned long failsafe_selector,
 			 unsigned long failsafe_address)
 {
-	return _hypercall4(int, set_callbacks,
-			   event_selector, event_address,
-			   failsafe_selector, failsafe_address);
+	DECLEAR_SEC_HYPERCALLY(set_callbacks, 4,
+		event_selector, event_address, failsafe_selector, failsafe_address, 0);
+	res = _hypercall4(int, set_callbacks,
+			event_selector, event_address,
+			failsafe_selector, failsafe_address);
+	RELEASE_SEC_HYPERCALLY(set_callbacks, res);
 }
 #else  /* CONFIG_X86_64 */
 static inline int
@@ -278,19 +318,28 @@ HYPERVISOR_set_callbacks(unsigned long event_address,
 static inline int
 HYPERVISOR_callback_op(int cmd, void *arg)
 {
-	return _hypercall2(int, callback_op, cmd, arg);
+	DECLEAR_SEC_HYPERCALLY(callback_op, 1,
+		arg, 0, 0, 0, 0);
+	res = _hypercall2(int, callback_op, cmd, arg);
+	RELEASE_SEC_HYPERCALLY(callback_op, res);
 }
 
 static inline int
 HYPERVISOR_fpu_taskswitch(int set)
 {
-	return _hypercall1(int, fpu_taskswitch, set);
+	DECLEAR_SEC_HYPERCALLY(fpu_taskswitch, 0,
+		0, 0, 0, 0, 0);
+	res = _hypercall1(int, fpu_taskswitch, set);
+	RELEASE_SEC_HYPERCALLY(fpu_taskswitch, res);
 }
 
 static inline int
 HYPERVISOR_sched_op(int cmd, void *arg)
 {
-	return _hypercall2(int, sched_op, cmd, arg);
+	DECLEAR_SEC_HYPERCALLY(sched_op, 1,
+		arg, 0, 0, 0, 0);
+	res = _hypercall2(int, sched_op, cmd, arg);
+	RELEASE_SEC_HYPERCALLY(sched_op, res);
 }
 
 static inline long
@@ -331,25 +380,34 @@ HYPERVISOR_update_descriptor(u64 ma, u64 desc)
 static inline int
 HYPERVISOR_memory_op(unsigned int cmd, void *arg)
 {
-	return _hypercall2(int, memory_op, cmd, arg);
+	DECLEAR_SEC_HYPERCALLY(memory_op, 2,
+		cmd, arg, 0, 0, 0);
+	res = _hypercall2(int, memory_op, cmd, arg);
+	RELEASE_SEC_HYPERCALLY(memory_op, res);
 }
 
 static inline int
 HYPERVISOR_multicall(void *call_list, int nr_calls)
 {
-	return _hypercall2(int, multicall, call_list, nr_calls);
+	DECLEAR_SEC_HYPERCALLY(multicall, 2,
+		call_list, nr_calls, 0, 0, 0);
+	res = _hypercall2(int, multicall, call_list, nr_calls);
+	RELEASE_SEC_HYPERCALLY(multicall, res);
 }
 
 static inline int
 HYPERVISOR_update_va_mapping(unsigned long va, pte_t new_val,
 			     unsigned long flags)
 {
+	DECLEAR_SEC_HYPERCALLY(update_va_mapping, 3,
+		va, new_val.pte, flags, 0, 0);
 	if (sizeof(new_val) == sizeof(long))
-		return _hypercall3(int, update_va_mapping, va,
+		res = _hypercall3(int, update_va_mapping, va,
 				   new_val.pte, flags);
 	else
-		return _hypercall4(int, update_va_mapping, va,
+		res = _hypercall4(int, update_va_mapping, va,
 				   new_val.pte, new_val.pte >> 32, flags);
+	RELEASE_SEC_HYPERCALLY(update_va_mapping, res);
 }
 
 static inline int
@@ -375,7 +433,10 @@ HYPERVISOR_xen_version(int cmd, void *arg)
 static inline int
 HYPERVISOR_console_io(int cmd, int count, char *str)
 {
-	return _hypercall3(int, console_io, cmd, count, str);
+	DECLEAR_SEC_HYPERCALLY(console_io, 3,
+		cmd, count, str, 0, 0);
+	res = _hypercall3(int, console_io, cmd, count, str);
+	RELEASE_SEC_HYPERCALLY(console_io, res);
 }
 
 static inline int
@@ -395,32 +456,56 @@ HYPERVISOR_physdev_op(int cmd, void *arg)
 static inline int
 HYPERVISOR_grant_table_op(unsigned int cmd, void *uop, unsigned int count)
 {
-	return _hypercall3(int, grant_table_op, cmd, uop, count);
+	DECLEAR_SEC_HYPERCALLY(grant_table_op, 3,
+		cmd, uop, count, 0, 0);
+	res = _hypercall3(int, grant_table_op, cmd, uop, count);
+	RELEASE_SEC_HYPERCALLY(grant_table_op, res);
 }
 
 static inline int
 HYPERVISOR_update_va_mapping_otherdomain(unsigned long va, pte_t new_val,
 					 unsigned long flags, domid_t domid)
 {
+	DECLEAR_SEC_HYPERCALLY(update_va_mapping_otherdomain, 4,
+		va, new_val.pte, flags, domid, 0);
 	if (sizeof(new_val) == sizeof(long))
-		return _hypercall4(int, update_va_mapping_otherdomain, va,
+		res = _hypercall4(int, update_va_mapping_otherdomain, va,
 				   new_val.pte, flags, domid);
 	else
-		return _hypercall5(int, update_va_mapping_otherdomain, va,
+		res = _hypercall5(int, update_va_mapping_otherdomain, va,
 				   new_val.pte, new_val.pte >> 32,
 				   flags, domid);
+	RELEASE_SEC_HYPERCALLY(update_va_mapping_otherdomain, res);
 }
 
 static inline int
 HYPERVISOR_vm_assist(unsigned int cmd, unsigned int type)
 {
-	return _hypercall2(int, vm_assist, cmd, type);
+	DECLEAR_SEC_HYPERCALLY(vm_assist, 2,
+		cmd, type, 0, 0, 0);
+	res = _hypercall2(int, vm_assist, cmd, type);
+	RELEASE_SEC_HYPERCALLY(vm_assist, res);
 }
 
 static inline int
 HYPERVISOR_vcpu_op(int cmd, int vcpuid, void *extra_args)
 {
-	return _hypercall3(int, vcpu_op, cmd, vcpuid, extra_args);
+	uint64_t timeout_abs_ns = 0;
+	unsigned int cpu = 0;
+	if (cmd == 8) {
+		timeout_abs_ns = ((struct vcpu_set_singleshot_timer *)extra_args)->timeout_abs_ns;
+		cpu = smp_processor_id();
+	}
+
+	{
+	DECLEAR_SEC_HYPERCALLY(vcpu_op, 3,
+		cmd, vcpuid,
+		(cmd == 8 ? (unsigned int)((timeout_abs_ns & 0xffffffff00000000) >> 32) : (unsigned int)extra_args),
+		(cmd == 8 ? (unsigned int)(timeout_abs_ns & 0xffffffff) : 0),
+		(cmd == 8 ? cpu : 0));
+	res = _hypercall3(int, vcpu_op, cmd, vcpuid, extra_args);
+	RELEASE_SEC_HYPERCALLY(vcpu_op, res);
+	}
 }
 
 #ifdef CONFIG_X86_64
@@ -435,6 +520,8 @@ static inline int
 HYPERVISOR_suspend(unsigned long start_info_mfn)
 {
 	struct sched_shutdown r = { .reason = SHUTDOWN_suspend };
+	DECLEAR_SEC_HYPERCALLY(sched_op, 3,
+		SCHEDOP_shutdown, &r, start_info_mfn, 0, 0);
 
 	/*
 	 * For a PV guest the tools require that the start_info mfn be
@@ -442,26 +529,75 @@ HYPERVISOR_suspend(unsigned long start_info_mfn)
 	 * hypercall calling convention this is the third hypercall
 	 * argument, which is start_info_mfn here.
 	 */
-	return _hypercall3(int, sched_op, SCHEDOP_shutdown, &r, start_info_mfn);
+	res = _hypercall3(int, sched_op, SCHEDOP_shutdown, &r, start_info_mfn);
+	RELEASE_SEC_HYPERCALLY(sched_op, res);
+}
+
+static inline int
+HYPERVISOR_mwait_suspend_op(unsigned long eax, unsigned long ecx,
+		   void *monitor_addr)
+{
+	DECLEAR_SEC_HYPERCALLY(mwait_suspend_op, 3,
+		eax, ecx, monitor_addr, 0, 0);
+	res = _hypercall3(int, mwait_suspend_op, eax, ecx, monitor_addr);
+	RELEASE_SEC_HYPERCALLY(mwait_suspend_op, res);
+}
+
+static inline int
+HYPERVISOR_mwait_idle_op(unsigned long eax, unsigned long ecx,
+		void *monitor_addr, unsigned long resched_addr)
+{
+	DECLEAR_SEC_HYPERCALLY(mwait_idle_op, 4,
+		eax, ecx, monitor_addr, resched_addr, 0);
+	res = _hypercall4(int, mwait_idle_op, eax, ecx, monitor_addr,
+			resched_addr);
+	RELEASE_SEC_HYPERCALLY(mwait_idle_op, res);
+}
+
+static inline int
+HYPERVISOR_raise_nmi_op(int cpu)
+{
+	DECLEAR_SEC_HYPERCALLY(raise_nmi_op, 1,
+		cpu, 0, 0, 0, 0);
+	res = _hypercall1(int, raise_nmi_op, cpu);
+	RELEASE_SEC_HYPERCALLY(raise_nmi_op, res);
+}
+
+static inline int
+HYPERVISOR_ipi_op(unsigned long cpu)
+{
+	DECLEAR_SEC_HYPERCALLY(ipi_op, 1,
+		cpu, 0, 0, 0, 0);
+	res = _hypercall1(int, ipi_op, cpu);
+	RELEASE_SEC_HYPERCALLY(ipi_op, res);
 }
 
 static inline int
 HYPERVISOR_nmi_op(unsigned long op, unsigned long arg)
 {
-	return _hypercall2(int, nmi_op, op, arg);
+	DECLEAR_SEC_HYPERCALLY(nmi_op, 2,
+		op, arg, 0, 0, 0);
+	res = _hypercall2(int, nmi_op, op, arg);
+	RELEASE_SEC_HYPERCALLY(nmi_op, res);
 }
 
 static inline unsigned long __must_check
 HYPERVISOR_hvm_op(int op, void *arg)
 {
-       return _hypercall2(unsigned long, hvm_op, op, arg);
+	DECLEAR_SEC_HYPERCALLY(hvm_op, 2,
+		op, arg, 0, 0, 0);
+    res = _hypercall2(unsigned long, hvm_op, op, arg);
+	RELEASE_SEC_HYPERCALLY(hvm_op, res);
 }
 
 static inline int
 HYPERVISOR_tmem_op(
 	struct tmem_op *op)
 {
-	return _hypercall1(int, tmem_op, op);
+	DECLEAR_SEC_HYPERCALLY(tmem_op, 1,
+		op, 0, 0, 0, 0);
+	res = _hypercall1(int, tmem_op, op);
+	RELEASE_SEC_HYPERCALLY(tmem_op, res);
 }
 
 static inline void

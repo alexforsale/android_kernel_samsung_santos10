@@ -67,6 +67,12 @@ void *kmap_atomic_pfn(unsigned long pfn);
 void *kmap_atomic_prot_pfn(unsigned long pfn, pgprot_t prot);
 struct page *kmap_atomic_to_page(void *ptr);
 
+#ifdef CONFIG_XEN
+#define __HAVE_ARCH_CLEARUSER_HIGHPAGE
+void native_clear_highpage(struct page *page);
+void native_copy_highpage(struct page *to, struct page *from);
+#endif
+
 #define flush_cache_kmaps()	do { } while (0)
 
 extern void add_highpages_with_active_regions(int nid, unsigned long start_pfn,

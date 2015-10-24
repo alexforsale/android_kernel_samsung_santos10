@@ -235,14 +235,6 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 		maskedx = cpuid_leaf1_edx_mask;
 		break;
 
-	case CPUID_MWAIT_LEAF:
-		/* Synthesize the values.. */
-		*ax = 0;
-		*bx = 0;
-		*cx = cpuid_leaf5_ecx_val;
-		*dx = cpuid_leaf5_edx_val;
-		return;
-
 	case CPUID_THERM_POWER_LEAF:
 		/* Disabling APERFMPERF for kernel usage */
 		maskecx = ~(1 << APERFMPERF_PRESENT);
@@ -1293,9 +1285,7 @@ asmlinkage void __init xen_start_kernel(void)
 
 	/* Prevent unwanted bits from being set in PTEs. */
 	__supported_pte_mask &= ~_PAGE_GLOBAL;
-#if 0
 	if (!xen_initial_domain())
-#endif
 		__supported_pte_mask &= ~(_PAGE_PWT | _PAGE_PCD);
 
 	__supported_pte_mask |= _PAGE_IOMAP;
@@ -1407,6 +1397,8 @@ asmlinkage void __init xen_start_kernel(void)
 		? __pa(xen_start_info->mod_start) : 0;
 	boot_params.hdr.ramdisk_size = xen_start_info->mod_len;
 	boot_params.hdr.cmd_line_ptr = __pa(xen_start_info->cmd_line);
+	//FIXME: propagate hardware_subarch from some boot structure
+	boot_params.hdr.hardware_subarch = X86_SUBARCH_INTEL_MID;
 
 	if (!xen_initial_domain()) {
 		add_preferred_console("xenboot", 0, NULL);

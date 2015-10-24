@@ -43,6 +43,7 @@
 #include <linux/bootmem.h>
 #include <linux/dmar.h>
 #include <linux/hpet.h>
+#include <linux/proc_fs.h>
 
 #include <asm/idle.h>
 #include <asm/io.h>
@@ -62,8 +63,16 @@
 #include <asm/hw_irq.h>
 
 #include <asm/apic.h>
+#include <asm/intel-mid.h>
 
-#define __apicdebuginit(type) static type __init
+#include <linux/notifier.h>
+
+#ifdef CONFIG_XEN
+#include <asm/xen/hypercall.h>
+#include <xen/interface/physdev.h>
+#endif
+
+#define __apicdebuginit(type) type
 
 #define for_each_irq_pin(entry, head) \
 	for (entry = head; entry; entry = entry->next)
@@ -315,11 +324,33 @@ static void free_irq_at(unsigned int at, struct irq_cfg *cfg)
 
 static inline unsigned int io_apic_read(unsigned int apic, unsigned int reg)
 {
+#ifdef CONFIG_XEN
+	if (xen_start_info) {
+		unsigned int ret;
+		struct physdev_apic apic_op;
+		apic_op.apic_physbase = mpc_ioapic_addr(apic);
+		apic_op.reg = reg;
+		ret = HYPERVISOR_physdev_op(PHYSDEVOP_apic_read, &apic_op);
+		if (ret)
+			return ret;
+		else
+			return apic_op.value;
+	} else
+#endif
 	return io_apic_ops.read(apic, reg);
 }
 
 static inline void io_apic_write(unsigned int apic, unsigned int reg, unsigned int value)
 {
+#ifdef CONFIG_XEN
+	if (xen_start_info) {
+		struct physdev_apic apic_op;
+		apic_op.apic_physbase = mpc_ioapic_addr(apic);
+		apic_op.reg = reg;
+		apic_op.value = value;
+		HYPERVISOR_physdev_op(PHYSDEVOP_apic_write, &apic_op);
+	} else
+#endif
 	io_apic_ops.write(apic, reg, value);
 }
 
@@ -348,6 +379,24 @@ static inline void io_apic_eoi(unsigned int apic, unsigned int vector)
 	struct io_apic __iomem *io_apic = io_apic_base(apic);
 	writel(vector, &io_apic->eoi);
 }
+
+/*
+ * This index matches with 1024 - 4 address in SCU RTE table area.
+ * That is not used for anything. Works in CLVP only
+ */
+#define LAST_INDEX_IN_IO_APIC_SPACE 255
+#define KERNEL_TO_SCU_PANIC_REQUEST (0x0515dead)
+void apic_scu_panic_dump(void)
+{
+	unsigned long flags;
+
+	printk(KERN_ERR "Request SCU panic dump");
+	raw_spin_lock_irqsave(&ioapic_lock, flags);
+	io_apic_write(0, LAST_INDEX_IN_IO_APIC_SPACE,
+		      KERNEL_TO_SCU_PANIC_REQUEST);
+	raw_spin_unlock_irqrestore(&ioapic_lock, flags);
+}
+EXPORT_SYMBOL_GPL(apic_scu_panic_dump);
 
 static unsigned int __io_apic_read(unsigned int apic, unsigned int reg)
 {
@@ -615,7 +664,8 @@ static void unmask_ioapic_irq(struct irq_data *data)
  */
 static void __eoi_ioapic_pin(int apic, int pin, int vector, struct irq_cfg *cfg)
 {
-	if (mpc_ioapic_ver(apic) >= 0x20) {
+	if ((mpc_ioapic_ver(apic) >= 0x20) &&
+		(intel_mid_identify_cpu() != INTEL_MID_CPU_CHIP_CLOVERVIEW)) {
 		/*
 		 * Intr-remapping uses pin number as the virtual vector
 		 * in the RTE. Actual vector is programmed in
@@ -631,6 +681,7 @@ static void __eoi_ioapic_pin(int apic, int pin, int vector, struct irq_cfg *cfg)
 
 		entry = entry1 = __ioapic_read_entry(apic, pin);
 
+		pr_info("[%s] apic=%d, pin=%d, vector=%d\n", __func__, apic, pin, vector);
 		/*
 		 * Mask the entry and change the trigger mode to edge.
 		 */
@@ -1954,21 +2005,37 @@ __setup("show_lapic=", setup_show_lapic);
 
 __apicdebuginit(int) print_ICs(void)
 {
-	if (apic_verbosity == APIC_QUIET)
-		return 0;
+#ifdef CONFIG_XEN
+	if (xen_start_info && oops_in_progress) {
+		struct physdev_nr_pirqs irqs;
+		HYPERVISOR_physdev_op(PHYSDEVOP_get_nr_pirqs, &irqs);
+	} else
+#endif
+	{
+		print_PIC();
 
-	print_PIC();
+		/* don't print out if apic is not there */
+		if (!cpu_has_apic && !apic_from_smp_config())
+			return 0;
 
-	/* don't print out if apic is not there */
-	if (!cpu_has_apic && !apic_from_smp_config())
-		return 0;
-
-	print_local_APICs(show_lapic);
-	print_IO_APICs();
-
+		print_local_APICs(NR_CPUS);
+		print_IO_APICs();
+	}
 	return 0;
 }
 
+static int print_debug_ICs(struct notifier_block *this, unsigned long event,
+		       void *ptr)
+{
+	return print_ICs();
+}
+
+static struct notifier_block panic_blk = {
+	.notifier_call = print_debug_ICs,
+};
+
+
+EXPORT_SYMBOL(print_ICs);
 late_initcall(print_ICs);
 
 
@@ -2542,6 +2609,13 @@ void irq_force_complete_move(int irq)
 static inline void irq_complete_move(struct irq_cfg *cfg) { }
 #endif
 
+#ifdef CONFIG_ATOM_SOC_POWER
+static int ioapic_set_wake(struct irq_data *data, unsigned int on)
+{
+	return 0;
+}
+#endif
+
 static void ack_apic_edge(struct irq_data *data)
 {
 	irq_complete_move(data->chip_data);
@@ -2713,6 +2787,9 @@ static struct irq_chip ioapic_chip __read_mostly = {
 	.irq_eoi		= ack_apic_level,
 #ifdef CONFIG_SMP
 	.irq_set_affinity	= ioapic_set_affinity,
+#endif
+#ifdef CONFIG_ATOM_SOC_POWER
+	.irq_set_wake	= ioapic_set_wake,
 #endif
 	.irq_retrigger		= ioapic_retrigger_irq,
 };
@@ -4128,3 +4205,27 @@ void __init pre_init_apic_IRQ0(void)
 	irq_set_chip_and_handler_name(0, &ioapic_chip, handle_edge_irq,
 				      "edge");
 }
+int dump_rte(char *page, char **start, off_t off,
+		int count, int *eof, void *data)
+{
+	print_ICs();
+	return 0;
+}
+
+/*
+static int __init proc_rte_init(void)
+{
+	struct proc_dir_entry *rte_proc;
+
+	rte_proc = create_proc_entry("ioapic_rte", S_IRUGO, NULL);
+	if (rte_proc) {
+		rte_proc->read_proc = dump_rte;
+		rte_proc->write_proc = NULL;
+	}
+
+	atomic_notifier_chain_register(&panic_notifier_list, &panic_blk);
+
+	return 0;
+}
+module_init(proc_rte_init);
+*/

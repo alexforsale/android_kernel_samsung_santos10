@@ -3,7 +3,7 @@ menu "Xen driver support"
 
 config XEN_BALLOON
 	bool "Xen memory balloon driver"
-	default y
+	default n
 	help
 	  The balloon driver allows the Xen domain to request more memory from
 	  the system to expand the domain's memory allocation, or alternatively
@@ -139,7 +139,7 @@ config XEN_GRANT_DEV_ALLOC
 	  or as part of an inter-domain shared memory channel.
 
 config SWIOTLB_XEN
-	def_bool y
+	def_bool n
 	depends on PCI
 	select SWIOTLB
 

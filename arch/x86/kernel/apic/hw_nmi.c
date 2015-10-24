@@ -18,6 +18,11 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 
+#ifdef CONFIG_XEN
+#include <asm/hypervisor.h>
+#include <asm/xen/hypercall.h>
+#endif
+
 #ifdef CONFIG_HARDLOCKUP_DETECTOR
 u64 hw_nmi_get_sample_period(int watchdog_thresh)
 {
@@ -46,7 +51,22 @@ void arch_trigger_all_cpu_backtrace(void)
 	cpumask_copy(to_cpumask(backtrace_mask), cpu_online_mask);
 
 	printk(KERN_INFO "sending NMI to all CPUs:\n");
-	apic->send_IPI_all(NMI_VECTOR);
+#ifdef CONFIG_XEN
+	if (xen_start_info ) {
+		unsigned int cpu, ret;
+		for_each_cpu(cpu, cpu_online_mask) {
+			if (cpu != smp_processor_id()) {
+				ret = HYPERVISOR_raise_nmi_op(cpu);
+				if (ret < 0 ) {
+					printk(KERN_ERR "Failed to send NMI to CPU:%d\n", cpu);
+				}
+			}
+		}
+		HYPERVISOR_raise_nmi_op(smp_processor_id());
+	}
+	else
+#endif
+		apic->send_IPI_all(NMI_VECTOR);
 
 	/* Wait for up to 10 seconds for all CPUs to do the backtrace */
 	for (i = 0; i < 10 * 1000; i++) {

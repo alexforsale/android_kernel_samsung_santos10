@@ -171,4 +171,6 @@ cpumask_of_pcibus(const struct pci_bus *bus)
 }
 #endif
 
+extern int xen_pcifront_enable_irq(struct pci_dev *dev);
+
 #endif /* _ASM_X86_PCI_H */

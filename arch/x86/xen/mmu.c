@@ -193,21 +193,12 @@ static bool xen_page_pinned(void *ptr)
 
 void xen_set_domain_pte(pte_t *ptep, pte_t pteval, unsigned domid)
 {
-	struct multicall_space mcs;
-	struct mmu_update *u;
+	struct mmu_update u;
 
-	trace_xen_mmu_set_domain_pte(ptep, pteval, domid);
+	u.ptr = virt_to_machine(ptep).maddr | MMU_NORMAL_PT_UPDATE;
+	u.val = pte_val_ma(pteval);
 
-	mcs = xen_mc_entry(sizeof(*u));
-	u = mcs.args;
-
-	/* ptep might be kmapped when using 32-bit HIGHPTE */
-	u->ptr = virt_to_machine(ptep).maddr;
-	u->val = pte_val_ma(pteval);
-
-	MULTI_mmu_update(mcs.mc, mcs.args, 1, NULL, domid);
-
-	xen_mc_issue(PARAVIRT_LAZY_MMU);
+	HYPERVISOR_mmu_update(&u, 1, NULL, domid);
 }
 EXPORT_SYMBOL_GPL(xen_set_domain_pte);
 
@@ -306,10 +297,60 @@ static bool xen_batched_set_pte(pte_t *ptep, pte_t pteval)
 	return true;
 }
 
+int highmem_assist = 1;
+
+static void xen_clear_highpage(struct page *page)
+{
+	struct mmuext_op meo;
+	int ret = -1;
+
+	if (highmem_assist && PageHighMem(page)) {
+		meo.cmd = MMUEXT_CLEAR_PAGE;
+		meo.arg1.mfn = pfn_to_mfn(page_to_pfn(page));
+		switch (HYPERVISOR_mmuext_op(&meo, 1, NULL, DOMID_SELF)) {
+		case 0:
+			ret = 0;
+			break;
+		case -ENOSYS:
+			highmem_assist = 0;
+			break;
+		}
+	}
+
+	if (ret)
+		native_clear_highpage(page);
+}
+
+static void xen_copy_highpage(struct page *to, struct page *from)
+{
+	int ret = -1;
+
+	if (highmem_assist && ((PageHighMem(from) || PageHighMem(to)))) {
+		unsigned long from_pfn = page_to_pfn(from);
+		unsigned long to_pfn = page_to_pfn(to);
+		struct mmuext_op meo;
+
+		meo.arg1.mfn = pfn_to_mfn(to_pfn);
+		meo.arg2.src_mfn = pfn_to_mfn(from_pfn);
+		meo.cmd = MMUEXT_COPY_PAGE;
+		switch (HYPERVISOR_mmuext_op(&meo, 1, NULL, DOMID_SELF)) {
+		case 0:
+			ret = 0;
+			break;
+		case -ENOSYS:
+			highmem_assist = 0;
+			break;
+		}
+	}
+
+	if (ret)
+		native_copy_highpage(to, from);
+}
+
 static inline void __xen_set_pte(pte_t *ptep, pte_t pteval)
 {
 	if (!xen_batched_set_pte(ptep, pteval))
-		native_set_pte(ptep, pteval);
+		xen_set_domain_pte(ptep, pteval, DOMID_SELF);
 }
 
 static void xen_set_pte(pte_t *ptep, pte_t pteval)
@@ -420,13 +461,13 @@ static pteval_t iomap_pte(pteval_t val)
 static pteval_t xen_pte_val(pte_t pte)
 {
 	pteval_t pteval = pte.pte;
-#if 0
+
 	/* If this is a WC pte, convert back from Xen WC to Linux WC */
 	if ((pteval & (_PAGE_PAT | _PAGE_PCD | _PAGE_PWT)) == _PAGE_PAT) {
 		WARN_ON(!pat_enabled);
 		pteval = (pteval & ~_PAGE_PAT) | _PAGE_PWT;
 	}
-#endif
+
 	if (xen_initial_domain() && (pteval & _PAGE_IOMAP))
 		return pteval;
 
@@ -468,7 +509,7 @@ void xen_set_pat(u64 pat)
 static pte_t xen_make_pte(pteval_t pte)
 {
 	phys_addr_t addr = (pte & PTE_PFN_MASK);
-#if 0
+
 	/* If Linux is trying to set a WC pte, then map to the Xen WC.
 	 * If _PAGE_PAT is set, then it probably means it is really
 	 * _PAGE_PSE, so avoid fiddling with the PAT mapping and hope
@@ -477,11 +518,11 @@ static pte_t xen_make_pte(pteval_t pte)
 	 * (We should never see kernel mappings with _PAGE_PSE set,
 	 * but we could see hugetlbfs mappings, I think.).
 	 */
-	if (pat_enabled && !WARN_ON(pte & _PAGE_PAT)) {
+	if (pat_enabled && !(pte & _PAGE_PAT)) {
 		if ((pte & (_PAGE_PCD | _PAGE_PWT)) == _PAGE_PWT)
 			pte = (pte & ~(_PAGE_PCD | _PAGE_PWT)) | _PAGE_PAT;
 	}
-#endif
+
 	/*
 	 * Unprivileged domains are allowed to do IOMAPpings for
 	 * PCI passthrough, but not map ISA space.  The ISA
@@ -556,7 +597,7 @@ static void xen_pte_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 {
 	trace_xen_mmu_pte_clear(mm, addr, ptep);
 	if (!xen_batched_set_pte(ptep, native_make_pte(0)))
-		native_pte_clear(mm, addr, ptep);
+		xen_set_domain_pte(ptep, native_make_pte(0), DOMID_SELF);
 }
 
 static void xen_pmd_clear(pmd_t *pmdp)
@@ -2049,7 +2090,8 @@ static const struct pv_mmu_ops xen_mmu_ops __initconst = {
 
 	.make_pte = PV_CALLEE_SAVE(xen_make_pte),
 	.make_pgd = PV_CALLEE_SAVE(xen_make_pgd),
-
+	.clear_highpage = xen_clear_highpage,
+	.copy_highpage = xen_copy_highpage,
 #ifdef CONFIG_X86_PAE
 	.set_pte_atomic = xen_set_pte_atomic,
 	.pte_clear = xen_pte_clear,

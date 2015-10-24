@@ -157,6 +157,7 @@ int hsi_unregister_port_event(struct hsi_client *cl);
  */
 struct hsi_client_driver {
 	struct device_driver	driver;
+	void *priv_data;
 };
 
 #define to_hsi_client_driver(drv) container_of(drv, struct hsi_client_driver,\

@@ -254,6 +254,11 @@ int tty_insert_flip_string_fixed_flag(struct tty_struct *tty,
 		/* If there is no space then tb may be NULL */
 		if (unlikely(space == 0))
 			break;
+		if (unlikely(tb == 0)) {
+			pr_err("[%s] we got the null point. will retry...\n",
+					__func__);
+			continue;
+		}
 		memcpy(tb->char_buf_ptr + tb->used, chars, space);
 		memset(tb->flag_buf_ptr + tb->used, flag, space);
 		tb->used += space;

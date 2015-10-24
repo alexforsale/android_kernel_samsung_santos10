@@ -106,6 +106,7 @@
  * IRQ work vector:
  */
 #define IRQ_WORK_VECTOR			0xf6
+#define PMU_VECTOR			0x21
 
 #define UV_BAU_MESSAGE			0xf5
 

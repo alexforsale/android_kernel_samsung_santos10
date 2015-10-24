@@ -42,7 +42,6 @@
 #include <linux/sysctl.h>
 #include <linux/oom.h>
 #include <linux/prefetch.h>
-#include <linux/debugfs.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -121,6 +120,11 @@ struct mem_cgroup_zone {
 	struct zone *zone;
 };
 
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+atomic_t kswapd_thread_on = ATOMIC_INIT(1);
+extern int get_soft_reclaim_status(void);
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
+
 #define lru_to_page(_head) (list_entry((_head)->prev, struct page, lru))
 
 #ifdef ARCH_HAS_PREFETCH
@@ -156,6 +160,113 @@ struct mem_cgroup_zone {
  */
 int vm_swappiness = 60;
 long vm_total_pages;	/* The total number of pages which the VM controls */
+
+#ifdef CONFIG_DYNAMIC_MIN_FREE
+#define TIME_WRAP_AROUND(x, y) (((y) > (x)) ? (y) - (x) : (0-(x)) + (y))
+struct dmf_struct_t {
+	u64 total_running;
+	u64 start;
+	u64 end;
+	u64 pre_run;
+	u64 runtime;
+	u64 interval;
+	bool running;
+	int min_free_back;
+	bool wm_updated;
+	struct delayed_work work;
+};
+
+static struct dmf_struct_t dmf;
+
+static int is_time_to_init_dmf(struct dmf_struct_t *d)
+{
+	return (!d->wm_updated && extra_free_kbytes != 0);
+}
+
+static int is_dmf_init(struct dmf_struct_t *d)
+{
+	return d->wm_updated;
+}
+
+static void dmf_update_min_free(void)
+{
+	static int current_min_free = 0;
+
+	if (extra_free_kbytes != current_min_free) {
+		dmf_setup_per_zone_wmarks();
+		current_min_free = extra_free_kbytes;
+	}
+}
+
+static void restore_dmf_min_free(struct dmf_struct_t *d)
+{
+	extra_free_kbytes = d->wm_updated ?
+			d->min_free_back : extra_free_kbytes;
+	dmf_update_min_free();
+}
+
+static void dmf_restore_work(struct work_struct *work)
+{
+	u64 restore_time = jiffies;
+
+	if (TIME_WRAP_AROUND(dmf.end, restore_time) >
+			msecs_to_jiffies(dmf_idle_limit))
+		restore_dmf_min_free(&dmf);
+}
+
+static void dmf_reduce_min_free(void)
+{
+	static u64 updated_jifs = 0;
+	u64 now_jifs = jiffies;
+
+	if (TIME_WRAP_AROUND(updated_jifs, now_jifs)
+		< msecs_to_jiffies(dmf_running_limit))
+		return;
+
+	extra_free_kbytes = extra_free_kbytes >> 1;
+	if (extra_free_kbytes < min_free_kbytes)
+		extra_free_kbytes = min_free_kbytes;
+	dmf_update_min_free();
+	updated_jifs = now_jifs;
+}
+
+static void init_dmf(struct dmf_struct_t *d)
+{
+	if (!d->wm_updated && extra_free_kbytes != 0) {
+		d->min_free_back = extra_free_kbytes;
+		d->wm_updated = true;
+		INIT_DELAYED_WORK(&d->work, dmf_restore_work);
+	}
+}
+
+#define dmf_gap(_dmf) ((_dmf)->start - (_dmf)->pre_run)
+
+static inline int is_lazy_dmf(struct dmf_struct_t *d)
+{
+	return (d->wm_updated &&
+		dmf_gap(d) > msecs_to_jiffies(dmf_lazy_interval));
+}
+
+static inline int is_busy_dmf(struct dmf_struct_t *d)
+{
+	return (d->wm_updated &&
+		d->interval < msecs_to_jiffies(dmf_busy_interval));
+}
+
+static inline int is_long_dmf(struct dmf_struct_t *d)
+{
+	return (d->wm_updated &&
+		(d->runtime > msecs_to_jiffies(dmf_running_limit)
+		|| d->total_running > msecs_to_jiffies(dmf_running_limit)));
+}
+
+static int is_too_long_dmf(struct dmf_struct_t *d)
+{
+	u64 now_jifs = jiffies;
+	return (TIME_WRAP_AROUND(d->start, now_jifs) >
+			msecs_to_jiffies(dmf_running_limit));
+}
+#endif /* CONFIG_DYNAMIC_MIN_FREE */
 
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
@@ -202,39 +313,6 @@ static unsigned long zone_nr_lru_pages(struct mem_cgroup_zone *mz,
 	return zone_page_state(mz->zone, NR_LRU_BASE + lru);
 }
 
-struct dentry *debug_file;
-
-static int debug_shrinker_show(struct seq_file *s, void *unused)
-{
-	struct shrinker *shrinker;
-	struct shrink_control sc;
-
-	sc.gfp_mask = -1;
-	sc.nr_to_scan = 0;
-
-	down_read(&shrinker_rwsem);
-	list_for_each_entry(shrinker, &shrinker_list, list) {
-		char name[64];
-		int num_objs;
-
-		num_objs = shrinker->shrink(shrinker, &sc);
-		seq_printf(s, "%pf %d\n", shrinker->shrink, num_objs);
-	}
-	up_read(&shrinker_rwsem);
-	return 0;
-}
-
-static int debug_shrinker_open(struct inode *inode, struct file *file)
-{
-        return single_open(file, debug_shrinker_show, inode->i_private);
-}
-
-static const struct file_operations debug_shrinker_fops = {
-        .open = debug_shrinker_open,
-        .read = seq_read,
-        .llseek = seq_lseek,
-        .release = single_release,
-};
 
 /*
  * Add a shrinker callback to be called from the vm
@@ -247,15 +325,6 @@ void register_shrinker(struct shrinker *shrinker)
 	up_write(&shrinker_rwsem);
 }
 EXPORT_SYMBOL(register_shrinker);
-
-static int __init add_shrinker_debug(void)
-{
-	debugfs_create_file("shrinker", 0644, NULL, NULL,
-			    &debug_shrinker_fops);
-	return 0;
-}
-
-late_initcall(add_shrinker_debug);
 
 /*
  * Remove one
@@ -1382,6 +1451,13 @@ static int too_many_isolated(struct zone *zone, int file,
 {
 	unsigned long inactive, isolated;
 
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+	if(get_soft_reclaim_status() == 1)
+	{
+		return 0;
+	}
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
+
 	if (current_is_kswapd())
 		return 0;
 
@@ -1395,6 +1471,14 @@ static int too_many_isolated(struct zone *zone, int file,
 		inactive = zone_page_state(zone, NR_INACTIVE_ANON);
 		isolated = zone_page_state(zone, NR_ISOLATED_ANON);
 	}
+
+	/*
+	 * GFP_NOIO/GFP_NOFS callers are allowed to isolate more pages, so they
+	 * won't get blocked by normal direct-reclaimers, forming a circular
+	 * deadlock.
+	 */
+	if ((sc->gfp_mask & GFP_IOFS) == GFP_IOFS)
+		inactive >>= 3;
 
 	return isolated > inactive;
 }
@@ -2157,6 +2241,10 @@ restart:
 		 */
 		if (nr_reclaimed >= nr_to_reclaim && priority < DEF_PRIORITY)
 			break;
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+		if ((sc->nr_reclaimed + nr_reclaimed) >= nr_to_reclaim && sc->may_swap)
+			break;
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 	}
 	blk_finish_plug(&plug);
 	sc->nr_reclaimed += nr_reclaimed;
@@ -2274,7 +2362,11 @@ static bool shrink_zones(int priority, struct zonelist *zonelist,
 {
 	struct zoneref *z;
 	struct zone *zone;
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+	unsigned long nr_soft_reclaimed = 0;
+#else
 	unsigned long nr_soft_reclaimed;
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 	unsigned long nr_soft_scanned;
 	bool aborted_reclaim = false;
 
@@ -2321,9 +2413,11 @@ static bool shrink_zones(int priority, struct zonelist *zonelist,
 			 * and balancing, not for a memcg's limit.
 			 */
 			nr_soft_scanned = 0;
+#ifndef CONFIG_ZRAM_FOR_ANDROID
 			nr_soft_reclaimed = mem_cgroup_soft_limit_reclaim(zone,
 						sc->order, sc->gfp_mask,
 						&nr_soft_scanned);
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 			sc->nr_reclaimed += nr_soft_reclaimed;
 			sc->nr_scanned += nr_soft_scanned;
 			/* need some check for avoid more shrink_zone() */
@@ -2483,7 +2577,11 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_writepage = !laptop_mode,
 		.nr_to_reclaim = SWAP_CLUSTER_MAX,
 		.may_unmap = 1,
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+		.may_swap = 0,
+#else
 		.may_swap = 1,
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 		.order = order,
 		.target_mem_cgroup = NULL,
 		.nodemask = nodemask,
@@ -2720,7 +2818,11 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 	int end_zone = 0;	/* Inclusive.  0 = ZONE_DMA */
 	unsigned long total_scanned;
 	struct reclaim_state *reclaim_state = current->reclaim_state;
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+	unsigned long nr_soft_reclaimed = 0;
+#else
 	unsigned long nr_soft_reclaimed;
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 	unsigned long nr_soft_scanned;
 	struct scan_control sc = {
 		.gfp_mask = GFP_KERNEL,
@@ -2828,9 +2930,11 @@ loop_again:
 			/*
 			 * Call soft limit reclaim before calling shrink_zone.
 			 */
+#ifndef CONFIG_ZRAM_FOR_ANDROID
 			nr_soft_reclaimed = mem_cgroup_soft_limit_reclaim(zone,
 							order, sc.gfp_mask,
 							&nr_soft_scanned);
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 			sc.nr_reclaimed += nr_soft_reclaimed;
 			total_scanned += nr_soft_scanned;
 
@@ -3055,6 +3159,35 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat, int order, int classzone_idx)
 		 * per-cpu vmstat threshold while kswapd is awake and restore
 		 * them before going back to sleep.
 		 */
+
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+		atomic_set(&kswapd_thread_on,0);
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
+
+#ifdef CONFIG_DYNAMIC_MIN_FREE
+		if (is_dmf_init(&dmf)) {
+			dmf.running = false;
+			dmf.end = jiffies;
+			dmf.runtime = TIME_WRAP_AROUND(dmf.start, dmf.end);
+			dmf.interval = TIME_WRAP_AROUND(dmf.pre_run, dmf.start);
+			dmf.pre_run = dmf.end;
+		}
+
+		if (is_busy_dmf(&dmf))
+			dmf.total_running += dmf.runtime;
+		else
+			dmf.total_running = 0;
+
+		if (is_long_dmf(&dmf)) {
+			dmf_reduce_min_free();
+			dmf.total_running = 0;
+			cancel_delayed_work_sync(&dmf.work);
+			schedule_delayed_work(&dmf.work,
+				msecs_to_jiffies(dmf_idle_limit+5));
+		} else {
+			restore_dmf_min_free(&dmf);
+		}
+#endif /* CONFIG_DYNAMIC_MIN_FREE */
 		set_pgdat_percpu_threshold(pgdat, calculate_normal_threshold);
 
 		if (!kthread_should_stop())
@@ -3122,6 +3255,7 @@ static int kswapd(void *p)
 	balanced_order = 0;
 	classzone_idx = new_classzone_idx = pgdat->nr_zones - 1;
 	balanced_classzone_idx = classzone_idx;
+
 	for ( ; ; ) {
 		int ret;
 
@@ -3160,6 +3294,31 @@ static int kswapd(void *p)
 		if (kthread_should_stop())
 			break;
 
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+		atomic_set(&kswapd_thread_on, 1);
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
+
+#ifdef CONFIG_DYNAMIC_MIN_FREE
+		if (!dmf.running) {
+			if (!is_dmf_init(&dmf)) {
+				init_dmf(&dmf);
+			} else {
+				dmf.start = jiffies;
+				dmf.running = true;
+				if (is_lazy_dmf(&dmf))
+					restore_dmf_min_free(&dmf);
+			}
+		} else {
+			if (is_too_long_dmf(&dmf)) {
+				dmf_reduce_min_free();
+				dmf.end = jiffies;
+				dmf.runtime = TIME_WRAP_AROUND(dmf.start, dmf.end);
+				dmf.start = dmf.end + 1;
+				dmf.pre_run = dmf.end;
+				dmf.total_running += dmf.runtime;
+			}
+		}
+#endif /* CONFIG_DYNAMIC_MIN_FREE */
 		/*
 		 * We can speed up thawing tasks if we don't call balance_pgdat
 		 * after returning from the refrigerator
@@ -3236,6 +3395,132 @@ unsigned long zone_reclaimable_pages(struct zone *zone)
 
 	return nr;
 }
+
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+/*
+ * This is the main entry point to direct page reclaim for RTCC.
+ *
+ * If a full scan of the inactive list fails to free enough memory then we
+ * are "out of memory" and something needs to be killed.
+ *
+ * If the caller is !__GFP_FS then the probability of a failure is reasonably
+ * high - the zone may be full of dirty or under-writeback pages, which this
+ * caller can't do much about.  We kick the writeback threads and take explicit
+ * naps in the hope that some of these pages can be written.  But if the
+ * allocating task holds filesystem locks which prevent writeout this might not
+ * work, and the allocation attempt will fail.
+ *
+ * returns:	0, if no pages reclaimed
+ * 		else, the number of pages reclaimed
+ */
+static unsigned long rtcc_do_try_to_free_pages(struct zonelist *zonelist, struct scan_control *sc, struct shrink_control *shrink)
+{
+	int priority;
+	unsigned long total_scanned = 0;
+	unsigned long writeback_threshold;
+	bool aborted_reclaim;
+
+	delayacct_freepages_start();
+
+	if (global_reclaim(sc))
+		count_vm_event(ALLOCSTALL);
+
+	for (priority = DEF_PRIORITY; priority >= 0; priority--) {
+		sc->nr_scanned = 0;
+		if (!priority)
+			disable_swap_token(sc->target_mem_cgroup);
+		aborted_reclaim = shrink_zones(priority, zonelist, sc);
+
+		total_scanned += sc->nr_scanned;
+		if (sc->nr_reclaimed >= sc->nr_to_reclaim)
+			goto out;
+
+		/*
+		 * Try to write back as many pages as we just scanned.  This
+		 * tends to cause slow streaming writers to write data to the
+		 * disk smoothly, at the dirtying rate, which is nice.   But
+		 * that's undesirable in laptop mode, where we *want* lumpy
+		 * writeout.  So in laptop mode, write out the whole world.
+		 */
+		writeback_threshold = sc->nr_to_reclaim + sc->nr_to_reclaim / 2;
+		if (total_scanned > writeback_threshold) {
+			wakeup_flusher_threads(laptop_mode ? 0 : total_scanned,
+						WB_REASON_TRY_TO_FREE_PAGES);
+			sc->may_writepage = 1;
+		}
+
+		/* Take a nap, wait for some writeback to complete */
+		if (!sc->hibernation_mode && sc->nr_scanned &&
+		    priority < DEF_PRIORITY - 2) {
+			struct zone *preferred_zone;
+
+			first_zones_zonelist(zonelist, gfp_zone(sc->gfp_mask),
+						&cpuset_current_mems_allowed,
+						&preferred_zone);
+			wait_iff_congested(preferred_zone, BLK_RW_ASYNC, HZ/10);
+		}
+	}
+
+out:
+	delayacct_freepages_end();
+
+	if (sc->nr_reclaimed)
+		return sc->nr_reclaimed;
+
+	/*
+	 * As hibernation is going on, kswapd is freezed so that it can't mark
+	 * the zone into all_unreclaimable. Thus bypassing all_unreclaimable
+	 * check.
+	 */
+	if (oom_killer_disabled)
+		return 0;
+
+	/* Aborted reclaim to try compaction? don't OOM, then */
+	if (aborted_reclaim)
+		return 1;
+
+	/* top priority shrink_zones still had more to do? don't OOM, then */
+	if (global_reclaim(sc) && !all_unreclaimable(zonelist, sc))
+		return 1;
+
+	return 0;
+}
+
+long rtcc_reclaim_pages(long nr_to_reclaim, long swap_en)
+{
+	struct reclaim_state reclaim_state;
+	struct scan_control sc = {
+		.gfp_mask = GFP_KERNEL,
+		.may_swap = swap_en,
+		.may_unmap = 1,
+		.may_writepage = 1,
+		.nr_to_reclaim = nr_to_reclaim,
+		.target_mem_cgroup = NULL,
+		.order = 0,
+	};
+	struct shrink_control shrink = {
+		.gfp_mask = sc.gfp_mask,
+	};
+	struct zonelist *zonelist = node_zonelist(numa_node_id(), sc.gfp_mask);
+	struct task_struct *p = current;
+	unsigned long nr_reclaimed;
+
+	p->flags |= PF_MEMALLOC;
+	lockdep_set_current_reclaim_state(sc.gfp_mask);
+	reclaim_state.reclaimed_slab = 0;
+	p->reclaim_state = &reclaim_state;
+
+	nr_reclaimed = rtcc_do_try_to_free_pages(zonelist, &sc, &shrink);
+
+	p->reclaim_state = NULL;
+	lockdep_clear_current_reclaim_state();
+	p->flags &= ~PF_MEMALLOC;
+
+	printk("RTCC, reclaim %ld pages\n", nr_reclaimed);
+
+	return nr_reclaimed;
+}
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 
 #ifdef CONFIG_HIBERNATION
 /*
@@ -3441,7 +3726,11 @@ static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 	struct scan_control sc = {
 		.may_writepage = !!(zone_reclaim_mode & RECLAIM_WRITE),
 		.may_unmap = !!(zone_reclaim_mode & RECLAIM_SWAP),
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+		.may_swap = 0,
+#else
 		.may_swap = 1,
+#endif /* CONFIG_ZRAM_FOR_ANDROID */
 		.nr_to_reclaim = max_t(unsigned long, nr_pages,
 				       SWAP_CLUSTER_MAX),
 		.gfp_mask = gfp_mask,

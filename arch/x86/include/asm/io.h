@@ -172,6 +172,8 @@ static inline unsigned int isa_virt_to_bus(volatile void *address)
  * look at pci_iomap().
  */
 extern void __iomem *ioremap_nocache(resource_size_t offset, unsigned long size);
+extern void __iomem *ioremap_nocache_ro(resource_size_t offset,
+				unsigned long size);
 extern void __iomem *ioremap_cache(resource_size_t offset, unsigned long size);
 extern void __iomem *ioremap_prot(resource_size_t offset, unsigned long size,
 				unsigned long prot_val);
@@ -182,6 +184,11 @@ extern void __iomem *ioremap_prot(resource_size_t offset, unsigned long size,
 static inline void __iomem *ioremap(resource_size_t offset, unsigned long size)
 {
 	return ioremap_nocache(offset, size);
+}
+
+static inline void __iomem *ioremap_ro(resource_size_t offset, unsigned long size)
+{
+	return ioremap_nocache_ro(offset, size);
 }
 
 extern void iounmap(volatile void __iomem *addr);

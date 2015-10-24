@@ -114,12 +114,16 @@ void panic(const char *fmt, ...)
 	 */
 	crash_kexec(NULL);
 
+#if !defined(CONFIG_SAMSUNG_DUMP_STACK_TRACE_FOR_ALL_CPUS)
 	/*
 	 * Note smp_send_stop is the usual smp shutdown function, which
 	 * unfortunately means it may not be hardened to work in a panic
 	 * situation.
 	 */
 	smp_send_stop();
+#else
+	trigger_all_cpu_backtrace();
+#endif
 
 	kmsg_dump(KMSG_DUMP_PANIC);
 

@@ -719,6 +719,16 @@ static inline void pmd_clear(pmd_t *pmdp)
 }
 #endif	/* CONFIG_X86_PAE */
 
+static inline void clear_highpage(struct page *page)
+{
+	PVOP_VCALL1(pv_mmu_ops.clear_highpage, page);
+}
+
+static inline void copy_highpage(struct page *to, struct page *from)
+{
+	PVOP_VCALL2(pv_mmu_ops.copy_highpage, to, from);
+}
+
 #define  __HAVE_ARCH_START_CONTEXT_SWITCH
 static inline void arch_start_context_switch(struct task_struct *prev)
 {

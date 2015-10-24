@@ -451,6 +451,17 @@ config TOUCHSCREEN_TNETV107X
 	  To compile this driver as a module, choose M here: the
 	  module will be called tnetv107x-ts.
 
+config TOUCHSCREEN_SYNAPTICS_S7301
+	tristate "SYNAPTICS S7301 Touchscreen Interface"
+	depends on I2C
+	help
+		Say Y here if you want support for SYNAPTICS S7301
+		touchscreen controllers.
+
+		To compile this driver as a module, choose M here: the
+		module will be called synaptics_ts.
+
+
 config TOUCHSCREEN_SYNAPTICS_I2C_RMI
 	tristate "Synaptics i2c touchscreen"
 	depends on I2C
@@ -851,4 +862,52 @@ config TOUCHSCREEN_TPS6507X
 	  To compile this driver as a module, choose M here: the
 	  module will be called tps6507x_ts.
 
+config TOUCHSCREEN_ATMEL_MXT224
+	tristate "ATMEL mXT224 touchscreen"
+	depends on I2C
+	default n
+	help
+		Say Y here if you have a mXT224 touchscreen
+		If unsure, say N.
+
+config TOUCHSCREEN_ATMEL_MXT1188S
+	tristate "ATMEL mXT1188s touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have a mXT1188s based touchscreen
+	  controller.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called sec_touchscreen.
+
+config TOUCHSCREEN_ATMEL_DEBUG
+	boolean "atmel touchscreen debug node"
+	depends on TOUCHSCREEN_ATMEL_MXT1188S
+	help
+	  Say Y here if you have a atmel touch device for debugging.
+
+	  If unsure, say N.
+
+config TOUCHSCREEN_SEC_FACTORY_TEST
+	bool "Samsung TSP Factory Test Mode"
+	depends on TOUCHSCREEN_ATMEL_MXT1188S || TOUCHSCREEN_SYNAPTICS_S7301
+	help
+		Say Y here if you want to support for Samsung Factory Test
+		mode for TSP.
+
+config TOUCHSCREEN_ATMEL_AUTOCAL
+	boolean "atmel touchscreen autocal mode"
+	depends on TOUCHSCREEN_ATMEL_MXT1188S
+	help
+		Say Y here is you want to set auto calibration timer.
+
+config TOUCHSCREEN_R69001_I2C
+	tristate "JDI R69001 touchscreen"
+	depends on I2C
+	default n
+	help
+		Say Y here if you have a R69001 touchscreen
+		If unsure, say N.
 endif

@@ -12,6 +12,7 @@
 #include <linux/gfp.h>
 #include <linux/smp.h>
 #include <linux/cpu.h>
+#include <asm/sec_addon.h>
 
 #ifdef CONFIG_USE_GENERIC_SMP_HELPERS
 static struct {
@@ -279,8 +280,15 @@ void generic_smp_call_function_single_interrupt(void)
 		 */
 		data_flags = data->flags;
 
+#ifdef CONFIG_SEC_DEBUG_XEN
+		sec_debug_xen_ipi_function_call_log(data->func, 1, data);
+#endif
+
 		data->func(data->info);
 
+#ifdef CONFIG_SEC_DEBUG_XEN
+		sec_debug_xen_ipi_function_call_log(data->func, 2, data);
+#endif
 		/*
 		 * Unlocked CSDs are valid through generic_exec_single():
 		 */

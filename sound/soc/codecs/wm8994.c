@@ -1037,12 +1037,14 @@ static int aif1clk_ev(struct snd_soc_dapm_widget *w,
 		      struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = w->codec;
+	struct wm8994_priv *wm8994 = snd_soc_codec_get_drvdata(codec);
 	struct wm8994 *control = codec->control_data;
 	int mask = WM8994_AIF1DAC1L_ENA | WM8994_AIF1DAC1R_ENA;
 	int i;
 	int dac;
 	int adc;
 	int val;
+	int slots = 0;
 
 	switch (control->type) {
 	case WM8994:
@@ -1053,8 +1055,15 @@ static int aif1clk_ev(struct snd_soc_dapm_widget *w,
 		break;
 	}
 
+	if (wm8994->pdata->override_params)
+		slots = wm8994->pdata->override_params->slots;
+
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		/* Don't enable timeslot 2 if not in use */
+		if (wm8994->channels[0] <= 2 && slots <= 2)
+			mask &= ~(WM8994_AIF1DAC2L_ENA | WM8994_AIF1DAC2R_ENA);
+
 		val = snd_soc_read(codec, WM8994_AIF1_CONTROL_1);
 		if ((val & WM8994_AIF1ADCL_SRC) &&
 		    (val & WM8994_AIF1ADCR_SRC))
@@ -2123,24 +2132,20 @@ static int _wm8994_set_fll(struct snd_soc_codec *codec, int id, int src,
 	struct wm8994 *control = wm8994->wm8994;
 	int reg_offset, ret;
 	struct fll_div fll;
-	u16 reg, aif1, aif2;
+	u16 reg, clk1, aif_reg, aif_src;
 	unsigned long timeout;
 	bool was_enabled;
-
-	aif1 = snd_soc_read(codec, WM8994_AIF1_CLOCKING_1)
-		& WM8994_AIF1CLK_ENA;
-
-	aif2 = snd_soc_read(codec, WM8994_AIF2_CLOCKING_1)
-		& WM8994_AIF2CLK_ENA;
 
 	switch (id) {
 	case WM8994_FLL1:
 		reg_offset = 0;
 		id = 0;
+		aif_src = 0x10;
 		break;
 	case WM8994_FLL2:
 		reg_offset = 0x20;
 		id = 1;
+		aif_src = 0x18;
 		break;
 	default:
 		return -EINVAL;
@@ -2182,11 +2187,20 @@ static int _wm8994_set_fll(struct snd_soc_codec *codec, int id, int src,
 	if (ret < 0)
 		return ret;
 
-	/* Gate the AIF clocks while we reclock */
-	snd_soc_update_bits(codec, WM8994_AIF1_CLOCKING_1,
-			    WM8994_AIF1CLK_ENA, 0);
-	snd_soc_update_bits(codec, WM8994_AIF2_CLOCKING_1,
-			    WM8994_AIF2CLK_ENA, 0);
+	/* Make sure that we're not providing SYSCLK right now */
+	clk1 = snd_soc_read(codec, WM8994_CLOCKING_1);
+	if (clk1 & WM8994_SYSCLK_SRC)
+		aif_reg = WM8994_AIF2_CLOCKING_1;
+	else
+		aif_reg = WM8994_AIF1_CLOCKING_1;
+	reg = snd_soc_read(codec, aif_reg);
+
+	if ((reg & WM8994_AIF1CLK_ENA) &&
+	    (reg & WM8994_AIF1CLK_SRC_MASK) == aif_src) {
+		dev_err(codec->dev, "FLL%d is currently providing SYSCLK\n",
+			id + 1);
+		return -EBUSY;
+	}
 
 	/* We always need to disable the FLL while reconfiguring */
 	snd_soc_update_bits(codec, WM8994_FLL1_CONTROL_1 + reg_offset,
@@ -2271,12 +2285,6 @@ static int _wm8994_set_fll(struct snd_soc_codec *codec, int id, int src,
 	wm8994->fll[id].in = freq_in;
 	wm8994->fll[id].out = freq_out;
 	wm8994->fll[id].src = src;
-
-	/* Enable any gated AIF clocks */
-	snd_soc_update_bits(codec, WM8994_AIF1_CLOCKING_1,
-			    WM8994_AIF1CLK_ENA, aif1);
-	snd_soc_update_bits(codec, WM8994_AIF2_CLOCKING_1,
-			    WM8994_AIF2CLK_ENA, aif2);
 
 	configure_clock(codec);
 
@@ -2661,6 +2669,8 @@ static int wm8994_hw_params(struct snd_pcm_substream *substream,
 	int lrclk = 0;
 	int rate_val = 0;
 	int id = dai->id - 1;
+	int format_bits = 0;
+	struct wm8994_override_params *override_params;
 
 	int i, cur_val, best_val, bclk_rate, best;
 
@@ -2695,8 +2705,17 @@ static int wm8994_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	bclk_rate = params_rate(params) * 4;
-	switch (params_format(params)) {
+	bclk_rate = params_rate(params);
+	format_bits = params_format(params);
+
+	/* Is there a format override for this AIF? */
+	override_params = wm8994->pdata->override_params;
+	if (override_params) {
+		if (override_params->format[dai->id - 1])
+			format_bits = override_params->format[dai->id - 1];
+	}
+
+	switch (format_bits) {
 	case SNDRV_PCM_FORMAT_S16_LE:
 		bclk_rate *= 16;
 		break;
@@ -2714,6 +2733,17 @@ static int wm8994_hw_params(struct snd_pcm_substream *substream,
 		break;
 	default:
 		return -EINVAL;
+	}
+
+	wm8994->channels[id] = params_channels(params);
+	switch (params_channels(params)) {
+	case 1:
+	case 2:
+		bclk_rate *= 2;
+		break;
+	default:
+		bclk_rate *= 4;
+		break;
 	}
 
 	/* Try to find an appropriate sample rate; look for an exact match. */
@@ -2852,10 +2882,12 @@ static void wm8994_aif_shutdown(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_codec *codec = dai->codec;
 	int rate_reg = 0;
+	unsigned int reg_val = 0x9;
 
 	switch (dai->id) {
 	case 1:
 		rate_reg = WM8994_AIF1_RATE;
+		reg_val = 0x83;
 		break;
 	case 2:
 		rate_reg = WM8994_AIF2_RATE;
@@ -2871,7 +2903,7 @@ static void wm8994_aif_shutdown(struct snd_pcm_substream *substream,
 	if (rate_reg && !dai->playback_active && !dai->capture_active)
 		snd_soc_update_bits(codec, rate_reg,
 				    WM8994_AIF1_SR_MASK |
-				    WM8994_AIF1CLK_RATE_MASK, 0x9);
+				    WM8994_AIF1CLK_RATE_MASK, reg_val);
 }
 
 static int wm8994_aif_mute(struct snd_soc_dai *codec_dai, int mute)
@@ -3846,17 +3878,8 @@ static int wm8994_codec_probe(struct snd_soc_codec *codec)
 		wm8994->hubs.hp_startup_mode = 1;
 		wm8994->hubs.no_cache_class_w = true;
 
-		switch (wm8994->revision) {
-		case 0:
-		case 1:
-		case 2:
-		case 3:
-			wm8994->hubs.dcs_codes_l = -9;
-			wm8994->hubs.dcs_codes_r = -7;
-			break;
-		default:
-			break;
-		}
+		wm8994->hubs.dcs_codes_l = -5;
+		wm8994->hubs.dcs_codes_r = -5;
 
 		snd_soc_update_bits(codec, WM8994_ANALOGUE_HP_1,
 				    WM1811_HPOUT1_ATTN, WM1811_HPOUT1_ATTN);

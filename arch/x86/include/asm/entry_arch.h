@@ -45,6 +45,8 @@ BUILD_INTERRUPT(spurious_interrupt,SPURIOUS_APIC_VECTOR)
 BUILD_INTERRUPT(irq_work_interrupt, IRQ_WORK_VECTOR)
 #endif
 
+BUILD_INTERRUPT(perf_event_pmu_handler, PMU_VECTOR)
+
 #ifdef CONFIG_X86_THERMAL_VECTOR
 BUILD_INTERRUPT(thermal_interrupt,THERMAL_APIC_VECTOR)
 #endif

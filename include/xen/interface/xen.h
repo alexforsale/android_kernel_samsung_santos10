@@ -59,6 +59,10 @@
 #define __HYPERVISOR_physdev_op           33
 #define __HYPERVISOR_hvm_op               34
 #define __HYPERVISOR_tmem_op              38
+#define __HYPERVISOR_mwait_suspend_op     39
+#define __HYPERVISOR_mwait_idle_op        40
+#define __HYPERVISOR_ipi_op               41
+#define __HYPERVISOR_raise_nmi_op         42
 
 /* Architecture-specific hypercall definitions. */
 #define __HYPERVISOR_arch_0               48
@@ -80,6 +84,7 @@
 #define VIRQ_CONSOLE    2  /* (DOM0) Bytes received on emergency console. */
 #define VIRQ_DOM_EXC    3  /* (DOM0) Exceptional event for some domain.   */
 #define VIRQ_DEBUGGER   6  /* (DOM0) A domain has paused for debugging.   */
+#define VIRQ_CON_RING   8  /* (DOM0) Bytes received on emergency console. */
 
 /* Architecture-specific VIRQ definitions. */
 #define VIRQ_ARCH_0    16
@@ -183,6 +188,8 @@
 #define MMUEXT_FLUSH_CACHE      12
 #define MMUEXT_SET_LDT          13
 #define MMUEXT_NEW_USER_BASEPTR 15
+#define MMUEXT_CLEAR_PAGE       16
+#define MMUEXT_COPY_PAGE        17
 
 #ifndef __ASSEMBLY__
 struct mmuext_op {
@@ -198,6 +205,8 @@ struct mmuext_op {
 		unsigned int nr_ents;
 		/* TLB_FLUSH_MULTI, INVLPG_MULTI */
 		void *vcpumask;
+		/* COPY_PAGE */
+		unsigned long src_mfn;
 	} arg2;
 };
 DEFINE_GUEST_HANDLE_STRUCT(mmuext_op);

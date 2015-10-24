@@ -87,6 +87,8 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
+#include <asm/sec_addon.h>
+
 void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 {
 	unsigned long delta;
@@ -2162,6 +2164,13 @@ unsigned long this_cpu_load(void)
 	return this->cpu_load[0];
 }
 
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+unsigned long this_cpu_loadx(int i)
+{
+	struct rq *this = this_rq();
+	return this->cpu_load[i];
+}
+#endif
 
 /*
  * Global load-average calculations
@@ -3382,6 +3391,8 @@ need_resched:
 	} else
 		raw_spin_unlock_irq(&rq->lock);
 
+	sec_debug_task_log(cpu, rq->curr);
+
 	post_schedule(rq);
 
 	sched_preempt_enable_no_resched();
@@ -4375,6 +4386,7 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 {
 	return __sched_setscheduler(p, policy, param, false);
 }
+EXPORT_SYMBOL_GPL(sched_setscheduler_nocheck);
 
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
@@ -5015,6 +5027,9 @@ void show_state_filter(unsigned long state_filter)
 		touch_nmi_watchdog();
 		if (!state_filter || (p->state & state_filter))
 			sched_show_task(p);
+#ifdef CONFIG_EMMC_IPANIC
+		emmc_ipanic_stream_emmc();
+#endif
 	} while_each_thread(g, p);
 
 	touch_all_softlockup_watchdogs();
@@ -5028,6 +5043,10 @@ void show_state_filter(unsigned long state_filter)
 	 */
 	if (!state_filter)
 		debug_show_all_locks();
+
+#ifdef CONFIG_EMMC_IPANIC
+	emmc_ipanic_stream_emmc();
+#endif
 }
 
 void __cpuinit init_idle_bootup_task(struct task_struct *idle)

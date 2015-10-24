@@ -5,6 +5,8 @@ config TRACE_IRQFLAGS_SUPPORT
 
 source "lib/Kconfig.debug"
 
+source "arch/x86/platform/intel-mid/sec_libs/Kconfig.debug"
+
 config STRICT_DEVMEM
 	bool "Filter access to /dev/mem"
 	---help---

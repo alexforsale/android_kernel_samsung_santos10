@@ -53,9 +53,9 @@ static inline unsigned long __arch_hweight64(__u64 w)
 	asm (ALTERNATIVE("call __sw_hweight64", POPCNT64, X86_FEATURE_POPCNT)
 		     : "="REG_OUT (res)
 		     : REG_IN (w));
-#endif /* CONFIG_X86_32 */
 
 	return res;
+#endif /* CONFIG_X86_32 */
 }
 
 #endif

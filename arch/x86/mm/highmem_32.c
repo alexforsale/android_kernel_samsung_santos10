@@ -57,6 +57,30 @@ void *kmap_atomic(struct page *page)
 }
 EXPORT_SYMBOL(kmap_atomic);
 
+#ifdef CONFIG_XEN
+void native_clear_highpage(struct page *page)
+{
+	void *kaddr;
+
+	kaddr = kmap_atomic(page);
+	clear_page(kaddr);
+	kunmap_atomic(kaddr);
+}
+EXPORT_SYMBOL(native_clear_highpage);
+
+void native_copy_highpage(struct page *to, struct page *from)
+{
+	char *vfrom, *vto;
+
+	vfrom = kmap_atomic(from);
+	vto = kmap_atomic(to);
+	copy_page(vto, vfrom);
+	kunmap_atomic(vto);
+	kunmap_atomic(vfrom);
+}
+EXPORT_SYMBOL(native_copy_highpage);
+#endif
+
 /*
  * This is the same as kmap_atomic() but can map memory that doesn't
  * have a struct page associated with it.

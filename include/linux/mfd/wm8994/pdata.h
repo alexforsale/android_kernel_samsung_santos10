@@ -17,6 +17,7 @@
 
 #define WM8994_NUM_LDO   2
 #define WM8994_NUM_GPIO 11
+#define WM8994_NUM_AIF   3
 
 struct wm8994_ldo_pdata {
 	/** GPIOs to enable regulator, 0 or less if not available */
@@ -129,6 +130,20 @@ struct wm8958_micd_rate {
 	int rate;
 };
 
+/**
+ * Some systems have blocks between the AP and codec that may change the
+ * format of the data (most commonly DSPs).
+ * Format and slot configuration info that overrides the hw_params
+ * settings.
+ */
+
+struct wm8994_override_params {
+	int format[WM8994_NUM_AIF];
+
+	/* This is only applicable to AIF1 */
+	int slots;
+};
+
 struct wm8994_pdata {
 	int gpio_base;
 
@@ -205,6 +220,11 @@ struct wm8994_pdata {
 	 * system.
 	 */
 	bool spkmode_pu;
+
+	/**
+	 * Override the params for an AIF
+	 */
+	struct wm8994_override_params *override_params;
 };
 
 #endif

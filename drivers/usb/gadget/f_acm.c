@@ -392,6 +392,9 @@ static int acm_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 		 * that bit, we should return to that no-flow state.
 		 */
 		acm->port_handshake_bits = w_value;
+#ifdef CONFIG_USB_DUN_SUPPORT
+		notify_control_line_state((unsigned long)w_value);
+#endif
 		break;
 
 	default:
@@ -429,7 +432,9 @@ static int acm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		if (acm->notify->driver_data) {
 			VDBG(cdev, "reset acm control interface %d\n", intf);
 			usb_ep_disable(acm->notify);
-		} else {
+		}
+
+		if (!(acm->notify->desc)) {
 			VDBG(cdev, "init acm ctrl interface %d\n", intf);
 			if (config_ep_by_speed(cdev->gadget, f, acm->notify))
 				return -EINVAL;
@@ -566,6 +571,21 @@ static void acm_cdc_notify_complete(struct usb_ep *ep, struct usb_request *req)
 		acm_notify_serial_state(acm);
 }
 
+#ifdef CONFIG_USB_DUN_SUPPORT
+int acm_notify(void *dev, u16 state)
+{
+	struct f_acm	*acm;
+	if (dev) {
+		acm = (struct f_acm *)dev;
+		acm->serial_state = state;
+		acm_notify_serial_state(acm);
+	} else {
+		printk(KERN_DEBUG "usb: %s not ready\n", __func__);
+		return -EAGAIN;
+	}
+	return 0;
+}
+#endif
 /* connect == the TTY link is open */
 
 static void acm_connect(struct gserial *port)
@@ -608,6 +628,8 @@ acm_bind(struct usb_configuration *c, struct usb_function *f)
 	struct f_acm		*acm = func_to_acm(f);
 	int			status;
 	struct usb_ep		*ep;
+	struct usb_descriptor_header **fs_function;
+	struct usb_descriptor_header **hs_function;
 
 	/* allocate instance-specific interface IDs, and patch descriptors */
 	status = usb_interface_id(c, f);
@@ -659,8 +681,19 @@ acm_bind(struct usb_configuration *c, struct usb_function *f)
 	acm->notify_req->complete = acm_cdc_notify_complete;
 	acm->notify_req->context = acm;
 
+	if (c->bConfigurationValue == 4) {
+		/* Descriptors with association descriptor */
+		fs_function = acm_fs_function;
+	} else if (c->bConfigurationValue == 1) {
+		/* If define ACM for Android,
+		 * descriptors with association descriptor */
+		fs_function = acm_fs_function;
+	} else {
+		/* Descriptors without association descriptor */
+		fs_function = &acm_fs_function[1];
+	}
 	/* copy descriptors */
-	f->descriptors = usb_copy_descriptors(acm_fs_function);
+	f->descriptors = usb_copy_descriptors(fs_function);
 	if (!f->descriptors)
 		goto fail;
 
@@ -676,8 +709,19 @@ acm_bind(struct usb_configuration *c, struct usb_function *f)
 		acm_hs_notify_desc.bEndpointAddress =
 				acm_fs_notify_desc.bEndpointAddress;
 
+		if (c->bConfigurationValue == 4) {
+			/* Descriptors with association descriptor */
+			hs_function = acm_hs_function;
+		} else if (c->bConfigurationValue == 1) {
+			/* If define ACM for Android,
+			 * descriptors with association descriptor */
+			hs_function = acm_hs_function;
+		} else {
+			/* Descriptors without association descriptor */
+			hs_function = &acm_hs_function[1];
+		}
 		/* copy descriptors */
-		f->hs_descriptors = usb_copy_descriptors(acm_hs_function);
+		f->hs_descriptors = usb_copy_descriptors(hs_function);
 	}
 	if (gadget_is_superspeed(c->cdev->gadget)) {
 		acm_ss_in_desc.bEndpointAddress =
@@ -697,6 +741,9 @@ acm_bind(struct usb_configuration *c, struct usb_function *f)
 			gadget_is_dualspeed(c->cdev->gadget) ? "dual" : "full",
 			acm->port.in->name, acm->port.out->name,
 			acm->notify->name);
+#ifdef CONFIG_USB_DUN_SUPPORT
+	modem_register(acm);
+#endif
 	return 0;
 
 fail:
@@ -721,6 +768,7 @@ acm_unbind(struct usb_configuration *c, struct usb_function *f)
 {
 	struct f_acm		*acm = func_to_acm(f);
 
+	acm_string_defs[ACM_CTRL_IDX].id = 0;
 	if (gadget_is_dualspeed(c->cdev->gadget))
 		usb_free_descriptors(f->hs_descriptors);
 	if (gadget_is_superspeed(c->cdev->gadget))
@@ -728,6 +776,9 @@ acm_unbind(struct usb_configuration *c, struct usb_function *f)
 	usb_free_descriptors(f->descriptors);
 	gs_free_req(acm->notify, acm->notify_req);
 	kfree(acm);
+#ifdef CONFIG_USB_DUN_SUPPORT
+	modem_unregister();
+#endif
 }
 
 /* Some controllers can't support CDC ACM ... */

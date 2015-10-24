@@ -353,6 +353,11 @@ static inline pgprot_t pgprot_modify(pgprot_t oldprot, pgprot_t newprot)
 	return __pgprot(preservebits | addbits);
 }
 
+static inline pgprot_t pte_attrs(pte_t pte)
+{
+	return __pgprot(pte_val(pte) & PTE_FLAGS_MASK);
+}
+
 #define pte_pgprot(x) __pgprot(pte_flags(x) & PTE_FLAGS_MASK)
 
 #define canon_pgprot(p) __pgprot(massage_pgprot(p))
@@ -614,7 +619,7 @@ static inline pte_t native_local_ptep_get_and_clear(pte_t *ptep)
 	pte_t res = *ptep;
 
 	/* Pure native function needs no input for mm, addr */
-	native_pte_clear(NULL, 0, ptep);
+	pte_clear(NULL, 0, ptep);
 	return res;
 }
 

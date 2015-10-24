@@ -745,6 +745,7 @@ static int audio_pcm_playback_trigger(struct snd_pcm_substream *substream,
 	return ret;
 }
 
+
 static struct audio_dev _audio_dev = {
 	.func = {
 		.name = "audio_source",

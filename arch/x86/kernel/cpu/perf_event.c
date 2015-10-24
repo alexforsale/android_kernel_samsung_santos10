@@ -1257,6 +1257,19 @@ perf_event_nmi_handler(unsigned int cmd, struct pt_regs *regs)
 	return x86_pmu.handle_irq(regs);
 }
 
+int smp_perf_event_pmu_handler(struct pt_regs *regs)
+{
+	if (!atomic_read(&active_events))
+		return NMI_DONE;
+
+	return x86_pmu.handle_irq(regs);
+}
+
+static void register_perf_event_pmu_handler(void *v)
+{
+	set_intr_gate(PMU_VECTOR, perf_event_pmu_handler);
+}
+
 struct event_constraint emptyconstraint;
 struct event_constraint unconstrained;
 

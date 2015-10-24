@@ -61,6 +61,18 @@ static void show_cpuinfo_misc(struct seq_file *m, struct cpuinfo_x86 *c)
 }
 #endif
 
+#if defined(CONFIG_SAMSUNG_SERIAL_NUM)
+static char sec_serial_num[64] = "DUMMY_SERIAL";
+
+static int __init sec_common_set_serial_num(char *str)
+{
+	strncpy(sec_serial_num, str, ARRAY_SIZE(sec_serial_num) - 1);
+
+	return 0;
+}
+early_param("androidboot.serialno", sec_common_set_serial_num);
+#endif
+
 static int show_cpuinfo(struct seq_file *m, void *v)
 {
 	struct cpuinfo_x86 *c = v;
@@ -132,6 +144,10 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 				seq_printf(m, " [%d]", i);
 		}
 	}
+
+#if defined(CONFIG_SAMSUNG_SERIAL_NUM)
+	seq_printf(m, "\nSerial\t\t: %s", sec_serial_num);
+#endif
 
 	seq_printf(m, "\n\n");
 

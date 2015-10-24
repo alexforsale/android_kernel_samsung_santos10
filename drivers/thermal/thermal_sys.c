@@ -196,6 +196,28 @@ trip_point_type_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t
+trip_point_temp_store(struct device *dev, struct device_attribute *attr,
+		     const char *buf, size_t count)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int trip, ret;
+	long temperature;
+
+	if (!tz->ops->set_trip_temp)
+		return -EPERM;
+
+	if (!sscanf(attr->attr.name, "trip_point_%d_temp", &trip))
+		return -EINVAL;
+
+	if (kstrtoul(buf, 10, &temperature))
+		return -EINVAL;
+
+	ret = tz->ops->set_trip_temp(tz, trip, temperature);
+
+	return ret ? ret : count;
+}
+
+static ssize_t
 trip_point_temp_show(struct device *dev, struct device_attribute *attr,
 		     char *buf)
 {
@@ -215,6 +237,52 @@ trip_point_temp_show(struct device *dev, struct device_attribute *attr,
 		return ret;
 
 	return sprintf(buf, "%ld\n", temperature);
+}
+
+static ssize_t
+trip_point_hyst_store(struct device *dev, struct device_attribute *attr,
+		     const char *buf, size_t count)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int trip, ret;
+	long temperature;
+
+	if (!tz->ops->set_trip_hyst)
+		return -EPERM;
+
+	if (!sscanf(attr->attr.name, "trip_point_%d_hyst", &trip))
+		return -EINVAL;
+
+	if (kstrtoul(buf, 10, &temperature))
+		return -EINVAL;
+
+	/*
+	 * We are not doing any check on the 'temperature' value
+	 * here. The driver implementing 'set_trip_hyst' has to
+	 * take care of this.
+	 */
+	ret = tz->ops->set_trip_hyst(tz, trip, temperature);
+
+	return ret ? ret : count;
+}
+
+static ssize_t
+trip_point_hyst_show(struct device *dev, struct device_attribute *attr,
+		     char *buf)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int trip, ret;
+	long temperature;
+
+	if (!tz->ops->get_trip_hyst)
+		return -EPERM;
+
+	if (!sscanf(attr->attr.name, "trip_point_%d_hyst", &trip))
+		return -EINVAL;
+
+	ret = tz->ops->get_trip_hyst(tz, trip, &temperature);
+
+	return ret ? ret : sprintf(buf, "%ld\n", temperature);
 }
 
 static ssize_t
@@ -278,37 +346,89 @@ passive_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%d\n", tz->forced_passive);
 }
 
+static ssize_t
+slope_store(struct device *dev, struct device_attribute *attr,
+		    const char *buf, size_t count)
+{
+	int ret;
+	long slope;
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+
+	if (!tz->ops->set_slope)
+		return -EPERM;
+
+	if (kstrtol(buf, 10, &slope))
+		return -EINVAL;
+
+	ret = tz->ops->set_slope(tz, slope);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t
+slope_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int ret;
+	long slope;
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+
+	if (!tz->ops->get_slope)
+		return -EINVAL;
+
+	ret = tz->ops->get_slope(tz, &slope);
+	if (ret)
+		return ret;
+
+	return sprintf(buf, "%ld\n", slope);
+}
+
+static ssize_t
+intercept_store(struct device *dev, struct device_attribute *attr,
+		    const char *buf, size_t count)
+{
+	int ret;
+	long intercept;
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+
+	if (!tz->ops->set_intercept)
+		return -EPERM;
+
+	if (kstrtol(buf, 10, &intercept))
+		return -EINVAL;
+
+	ret = tz->ops->set_intercept(tz, intercept);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t
+intercept_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int ret;
+	long intercept;
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+
+	if (!tz->ops->get_intercept)
+		return -EINVAL;
+
+	ret = tz->ops->get_intercept(tz, &intercept);
+	if (ret)
+		return ret;
+
+	return sprintf(buf, "%ld\n", intercept);
+}
+
 static DEVICE_ATTR(type, 0444, type_show, NULL);
 static DEVICE_ATTR(temp, 0444, temp_show, NULL);
 static DEVICE_ATTR(mode, 0644, mode_show, mode_store);
 static DEVICE_ATTR(passive, S_IRUGO | S_IWUSR, passive_show, passive_store);
-
-static struct device_attribute trip_point_attrs[] = {
-	__ATTR(trip_point_0_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_0_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_1_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_1_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_2_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_2_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_3_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_3_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_4_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_4_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_5_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_5_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_6_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_6_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_7_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_7_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_8_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_8_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_9_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_9_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_10_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_10_temp, 0444, trip_point_temp_show, NULL),
-	__ATTR(trip_point_11_type, 0444, trip_point_type_show, NULL),
-	__ATTR(trip_point_11_temp, 0444, trip_point_temp_show, NULL),
-};
+static DEVICE_ATTR(slope, S_IRUGO | S_IWUSR, slope_show, slope_store);
+static DEVICE_ATTR(intercept, S_IRUGO | S_IWUSR, intercept_show, \
+		intercept_store);
 
 /* sys I/F for cooling device */
 #define to_cooling_device(_dev)	\
@@ -560,7 +680,7 @@ thermal_add_hwmon_sysfs(struct thermal_zone_device *tz)
 		goto free_temp_mem;
 
 	if (tz->ops->get_crit_temp) {
-		unsigned long temperature;
+		long temperature;
 		if (!tz->ops->get_crit_temp(tz, &temperature)) {
 			snprintf(temp->temp_crit.name, THERMAL_NAME_LENGTH,
 				"temp%d_crit", hwmon->count);
@@ -793,7 +913,8 @@ int thermal_zone_bind_cooling_device(struct thermal_zone_device *tz,
 	if (result)
 		goto release_idr;
 
-	sprintf(dev->attr_name, "cdev%d_trip_point", dev->id);
+	snprintf(dev->attr_name, sizeof(dev->attr_name),
+		"cdev%d_trip_point", dev->id);
 	sysfs_attr_init(&dev->attr.attr);
 	dev->attr.attr.name = dev->attr_name;
 	dev->attr.attr.mode = 0444;
@@ -881,12 +1002,168 @@ static struct class thermal_class = {
 	.name = "thermal",
 	.dev_release = thermal_release,
 };
+#define THERMAL_WAKE_TIMER
+#ifdef THERMAL_WAKE_TIMER
+/* default expiry for deferrable timer */
+#define DEFERRABLE_TIMEOUT      29
+static DEFINE_MUTEX(def_timer_lock);
+struct deferrable_timer {
+	struct device dev;
+	struct work_struct uevent_work;
+	struct timer_list timer;
+	struct timer_list wdtimer;
+	unsigned int timeout;
+	unsigned int enabled;
+	int updated_once;
+};
+
+static struct deferrable_timer *dt;
+static void dt_timer(unsigned long data);
+/**
+ * this function is just a no-op. the deferable
+ * timer should fire when we are here!
+ */
+static void wd_timer(unsigned long data)
+{
+	return;
+};
+static void dt_uevent_helper(struct work_struct *work);
+#define to_dt(_dev)     container_of(_dev, struct deferrable_timer, dev)
+static int dt_activate_once(struct deferrable_timer *dt)
+{
+	INIT_WORK((&dt->uevent_work), dt_uevent_helper);
+	init_timer_deferrable(&dt->timer);
+	dt->timer.data = (unsigned long) dt;
+	dt->timer.function = dt_timer;
+	dt->timer.expires = jiffies + (dt->timeout * HZ);
+	add_timer(&dt->timer);
+
+	/**
+	 * another normal timer acts as a hard limit backup,
+	 * but this timer func does nothing! the wake was enough
+	 */
+	init_timer(&dt->wdtimer);
+	dt->wdtimer.data = (unsigned long) dt;
+	dt->wdtimer.function = wd_timer;
+	dt->wdtimer.expires = jiffies + (2 * dt->timeout * HZ);
+	add_timer(&dt->wdtimer);
+	return 0;
+}
+
+static ssize_t show_dt_enabled(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct deferrable_timer *dt = to_dt(dev);
+	return sprintf(buf, "%u\n", dt->enabled);
+}
+static ssize_t show_dt_timeout(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct deferrable_timer *dt = to_dt(dev);
+	return sprintf(buf, "%u\n", dt->timeout);
+}
+
+static ssize_t set_dt_enable_once(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	unsigned int enable;
+	struct deferrable_timer *dt = to_dt(dev);
+
+	if (kstrtouint(buf, 10, &enable))
+		return -EINVAL;
+
+	mutex_lock(&def_timer_lock);
+	/* one time operation. disallow subsequent writes */
+	if (!dt->updated_once) {
+		dt->enabled = enable;
+		dt->updated_once = 1;
+		if (dt->enabled)
+			dt_activate_once(dt);
+	}
+	mutex_unlock(&def_timer_lock);
+	return count;
+
+}
+static ssize_t set_dt_timeout(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf,  size_t count)
+{
+	struct deferrable_timer *dt = to_dt(dev);
+	int timeout = 0;
+
+	if (kstrtoint(buf, 10, &timeout))
+		return -EINVAL;
+
+	if (timeout <= 0)
+		return count;
+
+	mutex_lock(&def_timer_lock);
+	dt->timeout = timeout;
+	mutex_unlock(&def_timer_lock);
+	return count;
+
+}
+static struct device_attribute dev_attrs[] = {
+	__ATTR(enable, S_IRUGO | S_IWUSR, show_dt_enabled, set_dt_enable_once),
+	__ATTR(timeout, S_IRUGO | S_IWUSR, show_dt_timeout, set_dt_timeout)
+};
+
+static void dt_uevent_helper(struct work_struct *work)
+{
+	struct deferrable_timer *dt =
+		container_of(work, struct deferrable_timer, uevent_work);
+	kobject_uevent(&dt->dev.kobj, KOBJ_CHANGE);
+}
+static void dt_timer(unsigned long data)
+{
+	struct deferrable_timer *dt = (struct deferrable_timer *)data;
+	if (dt->enabled) {
+		schedule_work(&dt->uevent_work);
+		mod_timer(&dt->timer, jiffies + (dt->timeout * HZ));
+		mod_timer(&dt->wdtimer, jiffies + 2 * dt->timeout * HZ);
+	} else {
+		cancel_work_sync(&dt->uevent_work);
+	}
+}
+static int dt_init(void)
+{
+	int ret, ret0, ret1;
+	dt = kzalloc(sizeof(struct deferrable_timer), GFP_KERNEL);
+	if (!dt)
+		return -ENOMEM;
+	dt->dev.class = &thermal_class;
+	dev_set_name(&dt->dev, "deferrable_timer");
+	ret = device_register(&dt->dev);
+	if (ret) {
+		kfree(dt);
+		return ret;
+	}
+	ret0 = device_create_file(&dt->dev, &dev_attrs[0]);
+	if (ret0)
+		goto exit0;
+
+	ret1 = device_create_file(&dt->dev, &dev_attrs[1]);
+	if (ret1)
+		goto exit1;
+	dt->timeout = DEFERRABLE_TIMEOUT;
+	return 0;
+exit1:
+	device_remove_file(&dt->dev, &dev_attrs[0]);
+exit0:
+	device_unregister(&dt->dev);
+	kfree(dt);
+	return ret;
+}
+#endif
 
 /**
  * thermal_cooling_device_register - register a new thermal cooling device
  * @type:	the thermal cooling device type.
  * @devdata:	device private data.
- * @ops:		standard thermal cooling devices callbacks.
+ * @ops:	standard thermal cooling devices callbacks.
  */
 struct thermal_cooling_device *
 thermal_cooling_device_register(char *type, void *devdata,
@@ -896,7 +1173,7 @@ thermal_cooling_device_register(char *type, void *devdata,
 	struct thermal_zone_device *pos;
 	int result;
 
-	if (strlen(type) >= THERMAL_NAME_LENGTH)
+	if (!type || strlen(type) >= THERMAL_NAME_LENGTH)
 		return ERR_PTR(-EINVAL);
 
 	if (!ops || !ops->get_max_state || !ops->get_cur_state ||
@@ -926,11 +1203,9 @@ thermal_cooling_device_register(char *type, void *devdata,
 	}
 
 	/* sys I/F */
-	if (type) {
-		result = device_create_file(&cdev->device, &dev_attr_cdev_type);
-		if (result)
-			goto unregister;
-	}
+	result = device_create_file(&cdev->device, &dev_attr_cdev_type);
+	if (result)
+		goto unregister;
 
 	result = device_create_file(&cdev->device, &dev_attr_max_state);
 	if (result)
@@ -995,8 +1270,7 @@ void thermal_cooling_device_unregister(struct
 		tz->ops->unbind(tz, cdev);
 	}
 	mutex_unlock(&thermal_list_lock);
-	if (cdev->type[0])
-		device_remove_file(&cdev->device, &dev_attr_cdev_type);
+	device_remove_file(&cdev->device, &dev_attr_cdev_type);
 	device_remove_file(&cdev->device, &dev_attr_max_state);
 	device_remove_file(&cdev->device, &dev_attr_cur_state);
 
@@ -1089,9 +1363,83 @@ leave:
 EXPORT_SYMBOL(thermal_zone_device_update);
 
 /**
+ * create_trip_type_attr - creates a trip point type attribute
+ * @tz:		the thermal zone device
+ * @indx:	index into the trip_type_attrs array
+ */
+static int create_trip_type_attr(struct thermal_zone_device *tz, int indx)
+{
+	char *attr_name = kzalloc(THERMAL_NAME_LENGTH, GFP_KERNEL);
+	if (!attr_name)
+		return -ENOMEM;
+
+	snprintf(attr_name, THERMAL_NAME_LENGTH, "trip_point_%d_type", indx);
+
+	sysfs_attr_init(&tz->trip_type_attrs[indx].attr);
+	tz->trip_type_attrs[indx].attr.name = attr_name;
+	tz->trip_type_attrs[indx].attr.mode = S_IRUGO;
+	tz->trip_type_attrs[indx].show = trip_point_type_show;
+
+	return device_create_file(&tz->device, &tz->trip_type_attrs[indx]);
+}
+
+/**
+ * create_trip_temp_attr - creates a trip point temp attribute
+ * @tz:		the thermal zone device
+ * @indx:	index into the trip_type_attrs array
+ * @writeable:	A flag: If 1, 'this' trip point is writeable; otherwise not
+ */
+static int create_trip_temp_attr(struct thermal_zone_device *tz,
+				int indx, int writeable)
+{
+	char *attr_name = kzalloc(THERMAL_NAME_LENGTH, GFP_KERNEL);
+	if (!attr_name)
+		return -ENOMEM;
+
+	snprintf(attr_name, THERMAL_NAME_LENGTH, "trip_point_%d_temp", indx);
+
+	sysfs_attr_init(&tz->trip_temp_attrs[indx].attr);
+	tz->trip_temp_attrs[indx].attr.name = attr_name;
+	tz->trip_temp_attrs[indx].attr.mode = S_IRUGO;
+	tz->trip_temp_attrs[indx].show = trip_point_temp_show;
+	if (writeable) {
+		tz->trip_temp_attrs[indx].attr.mode |= S_IWUSR;
+		tz->trip_temp_attrs[indx].store = trip_point_temp_store;
+	}
+
+	return device_create_file(&tz->device, &tz->trip_temp_attrs[indx]);
+}
+
+/**
+ * create_trip_hyst_attr - creates hysteresis attribute for a trip point
+ * @tz:		the thermal zone device
+ * @indx:	index into the trip_hyst_attrs array
+ */
+static int create_trip_hyst_attr(struct thermal_zone_device *tz, int indx)
+{
+	char *attr_name = kzalloc(THERMAL_NAME_LENGTH, GFP_KERNEL);
+	if (!attr_name)
+		return -ENOMEM;
+
+	snprintf(attr_name, THERMAL_NAME_LENGTH, "trip_point_%d_hyst", indx);
+
+	sysfs_attr_init(&tz->trip_hyst_attrs[indx].attr);
+	tz->trip_hyst_attrs[indx].attr.name = attr_name;
+	tz->trip_hyst_attrs[indx].attr.mode = S_IRUGO;
+	tz->trip_hyst_attrs[indx].show = trip_point_hyst_show;
+	if (tz->ops->set_trip_hyst) {
+		tz->trip_hyst_attrs[indx].attr.mode |= S_IWUSR;
+		tz->trip_hyst_attrs[indx].store = trip_point_hyst_store;
+	}
+
+	return device_create_file(&tz->device, &tz->trip_hyst_attrs[indx]);
+}
+
+/**
  * thermal_zone_device_register - register a new thermal zone device
  * @type:	the thermal zone device type
  * @trips:	the number of trip points the thermal zone support
+ * @flag:	a bit string indicating the writeablility of trip points
  * @devdata:	private device data
  * @ops:	standard thermal zone device callbacks
  * @tc1:	thermal coefficient 1 for passive calculations
@@ -1107,21 +1455,24 @@ EXPORT_SYMBOL(thermal_zone_device_update);
  * section 11.1.5.1 of the ACPI specification 3.0.
  */
 struct thermal_zone_device *thermal_zone_device_register(char *type,
-	int trips, void *devdata,
+	int trips, int flag, void *devdata,
 	const struct thermal_zone_device_ops *ops,
 	int tc1, int tc2, int passive_delay, int polling_delay)
 {
 	struct thermal_zone_device *tz;
 	struct thermal_cooling_device *pos;
 	enum thermal_trip_type trip_type;
-	int result;
+	int result, ret;
 	int count;
 	int passive = 0;
 
-	if (strlen(type) >= THERMAL_NAME_LENGTH)
+	if (!type || strlen(type) >= THERMAL_NAME_LENGTH)
 		return ERR_PTR(-EINVAL);
 
 	if (trips > THERMAL_MAX_TRIPS || trips < 0)
+		return ERR_PTR(-EINVAL);
+
+	if (flag >> trips)
 		return ERR_PTR(-EINVAL);
 
 	if (!ops || !ops->get_temp)
@@ -1159,11 +1510,9 @@ struct thermal_zone_device *thermal_zone_device_register(char *type,
 	}
 
 	/* sys I/F */
-	if (type) {
-		result = device_create_file(&tz->device, &dev_attr_type);
-		if (result)
-			goto unregister;
-	}
+	result = device_create_file(&tz->device, &dev_attr_type);
+	if (result)
+		goto unregister;
 
 	result = device_create_file(&tz->device, &dev_attr_temp);
 	if (result)
@@ -1176,14 +1525,20 @@ struct thermal_zone_device *thermal_zone_device_register(char *type,
 	}
 
 	for (count = 0; count < trips; count++) {
-		result = device_create_file(&tz->device,
-					    &trip_point_attrs[count * 2]);
-		if (result)
-			break;
-		result = device_create_file(&tz->device,
-					    &trip_point_attrs[count * 2 + 1]);
+		result = create_trip_type_attr(tz, count);
 		if (result)
 			goto unregister;
+		result = create_trip_temp_attr(tz, count,
+						!!(flag & (1 << count)));
+		if (result)
+			goto unregister;
+
+		if (tz->ops->get_trip_hyst) {
+			result = create_trip_hyst_attr(tz, count);
+			if (result)
+				goto unregister;
+		}
+
 		tz->ops->get_trip_type(tz, count, &trip_type);
 		if (trip_type == THERMAL_TRIP_PASSIVE)
 			passive = 1;
@@ -1195,6 +1550,19 @@ struct thermal_zone_device *thermal_zone_device_register(char *type,
 
 	if (result)
 		goto unregister;
+
+	/* Create Sysfs for slope/intercept values */
+	if (tz->ops->get_slope) {
+		result = device_create_file(&tz->device, &dev_attr_slope);
+		if (result)
+			goto unregister;
+	}
+
+	if (tz->ops->get_intercept) {
+		result = device_create_file(&tz->device, &dev_attr_intercept);
+		if (result)
+			goto unregister;
+	}
 
 	result = thermal_add_hwmon_sysfs(tz);
 	if (result)
@@ -1214,6 +1582,15 @@ struct thermal_zone_device *thermal_zone_device_register(char *type,
 
 	thermal_zone_device_update(tz);
 
+	/* start deferrable timer once, if there is one or more tz register*/
+#ifdef THERMAL_WAKE_TIMER
+	if (!dt) {
+		ret = dt_init();
+		if (ret)
+			printk(KERN_DEBUG pr_fmt(
+			"Cant init Thermal deferrable timer: err %d\n"), ret);
+	}
+#endif
 	if (!result)
 		return tz;
 
@@ -1254,18 +1631,25 @@ void thermal_zone_device_unregister(struct thermal_zone_device *tz)
 
 	thermal_zone_device_set_polling(tz, 0);
 
-	if (tz->type[0])
-		device_remove_file(&tz->device, &dev_attr_type);
+	device_remove_file(&tz->device, &dev_attr_type);
 	device_remove_file(&tz->device, &dev_attr_temp);
 	if (tz->ops->get_mode)
 		device_remove_file(&tz->device, &dev_attr_mode);
 
+	if (tz->ops->get_slope)
+		device_remove_file(&tz->device, &dev_attr_slope);
+
+	if (tz->ops->get_intercept)
+		device_remove_file(&tz->device, &dev_attr_intercept);
+
 	for (count = 0; count < tz->trips; count++) {
-		device_remove_file(&tz->device,
-				   &trip_point_attrs[count * 2]);
-		device_remove_file(&tz->device,
-				   &trip_point_attrs[count * 2 + 1]);
+		device_remove_file(&tz->device, &tz->trip_type_attrs[count]);
+		device_remove_file(&tz->device, &tz->trip_temp_attrs[count]);
+		if (tz->ops->get_trip_hyst)
+			device_remove_file(&tz->device,
+						&tz->trip_hyst_attrs[count]);
 	}
+
 	thermal_remove_hwmon_sysfs(tz);
 	release_idr(&thermal_tz_idr, &thermal_idr_lock, tz->id);
 	idr_destroy(&tz->idr);
@@ -1396,6 +1780,13 @@ static void __exit thermal_exit(void)
 	mutex_destroy(&thermal_idr_lock);
 	mutex_destroy(&thermal_list_lock);
 	genetlink_exit();
+#ifdef THERMAL_WAKE_TIMER
+	if (dt) {
+		del_timer_sync(&dt->timer);
+		del_timer_sync(&dt->wdtimer);
+		kfree(dt);
+	}
+#endif
 }
 
 fs_initcall(thermal_init);

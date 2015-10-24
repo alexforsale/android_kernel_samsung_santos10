@@ -34,6 +34,26 @@
 #define LS_EXT	    0x50
 #define MI_EXT	    0x60
 
+/*hdmi audio fmt over hdmi tmds*/
+enum audio_fmt_code {
+	Reserved = 0,
+	HDMI_LPCM,
+	HDMI_AC3,
+	HDMI_MPEG1,
+	HDMI_MP3,
+	HDMI_MPEG2,
+	HDMI_AAC,
+	HDMI_DTS,
+	HDMI_ATRAC,
+	HDMI_ONE_BIT_AUDIO,
+	HDMI_DOLBY_DIGITAL,
+	HDMI_DTS_HD,
+	HDMI_MAT,
+	HDMI_DST,
+	HDMI_WMA_PRO,
+	RESERVED_FOR_AUDIO_FORMAT,
+};
+
 struct est_timings {
 	u8 t1;
 	u8 t2;
@@ -90,12 +110,26 @@ struct detailed_data_monitor_range {
 	u8 min_hfreq_khz;
 	u8 max_hfreq_khz;
 	u8 pixel_clock_mhz; /* need to multiply by 10 */
-	__le16 sec_gtf_toggle; /* A000=use above, 20=use below */
-	u8 hfreq_start_khz; /* need to multiply by 2 */
-	u8 c; /* need to divide by 2 */
-	__le16 m;
-	u8 k;
-	u8 j; /* need to divide by 2 */
+	u8 flags;
+	union {
+		struct {
+			u8 reserved;
+			u8 hfreq_start_khz; /* need to multiply by 2 */
+			u8 c; /* need to divide by 2 */
+			__le16 m;
+			u8 k;
+			u8 j; /* need to divide by 2 */
+		} __attribute__((packed)) gtf2;
+		struct {
+			u8 version;
+			u8 data1; /* high 6 bits: extra clock resolution */
+			u8 data2; /* plus low 2 of above: max hactive */
+			u8 supported_aspects;
+			u8 flags; /* preferred aspect and blanking support */
+			u8 supported_scalings;
+			u8 preferred_refresh;
+		} __attribute__((packed)) cvt;
+	} formula;
 } __attribute__((packed));
 
 struct detailed_data_wpindex {

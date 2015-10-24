@@ -25,6 +25,11 @@ config ANDROID_LOGGER
 	tristate "Android log driver"
 	default n
 
+config ANDROID_LOGGER_PTI
+	tristate "Android log driver on PTI"
+	default n
+	depends on ANDROID_LOGGER
+
 config ANDROID_PERSISTENT_RAM
 	bool
 	depends on HAVE_MEMBLOCK
@@ -86,6 +91,16 @@ config ANDROID_INTF_ALARM_DEV
 	  Provides non-wakeup and rtc backed wakeup alarms based on rtc or
 	  elapsed realtime, and a non-wakeup alarm on the monotonic clock.
 	  Also exports the alarm interface to user-space.
+
+config ENHANCED_LMK_ROUTINE
+	bool "LMK may kill up to 3 processes"
+	depends on ANDROID_LOW_MEMORY_KILLER
+	default y
+
+config LMK_COUNT_READ
+	bool "Enable LMK counter"
+	depends on ANDROID_LOW_MEMORY_KILLER
+	default y
 
 endif # if ANDROID
 

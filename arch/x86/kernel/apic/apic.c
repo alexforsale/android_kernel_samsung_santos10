@@ -47,12 +47,14 @@
 #include <asm/desc.h>
 #include <asm/hpet.h>
 #include <asm/idle.h>
+#include <asm/intel-mid.h>
 #include <asm/mtrr.h>
 #include <asm/time.h>
 #include <asm/smp.h>
 #include <asm/mce.h>
 #include <asm/tsc.h>
 #include <asm/hypervisor.h>
+#include <asm/sec_addon.h>
 
 unsigned int num_processors;
 
@@ -882,20 +884,26 @@ void __irq_entry smp_apic_timer_interrupt(struct pt_regs *regs)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
+	int cpu = smp_processor_id();
 	/*
 	 * NOTE! We'd better ACK the irq immediately,
 	 * because timer handling can be slow.
 	 */
 	ack_APIC_irq();
+
+	sec_debug_irq_regs_log(cpu, regs);
 	/*
 	 * update_process_times() expects us to have done irq_enter().
 	 * Besides, if we don't timer interrupts ignore the global
 	 * interrupt lock, which is the WrongThing (tm) to do.
 	 */
+
+	sec_debug_irq_log(0, smp_apic_timer_interrupt, 1);
 	irq_enter();
 	exit_idle();
 	local_apic_timer_interrupt();
 	irq_exit();
+	sec_debug_irq_log(0, smp_apic_timer_interrupt, 2);
 
 	set_irq_regs(old_regs);
 }
@@ -2150,6 +2158,19 @@ static int lapic_suspend(void)
 	unsigned long flags;
 	int maxlvt;
 
+	/*
+	 * On intel_mid, the suspend flow is a bit different, and the lapic
+	 * hw implementation, and integration is not supporting standard
+	 * suspension.
+	 * This implementation is only putting high value to the timer, so that
+	 * AONT global timer will be updated with this big value at s0i3 entry,
+	 * and wont produce timer based wake up event.
+	 */
+	if (intel_mid_identify_cpu() != 0) {
+		apic_write(APIC_TMICT, ~0);
+		return 0;
+	}
+
 	if (!apic_pm_state.active)
 		return 0;
 
@@ -2188,6 +2209,15 @@ static void lapic_resume(void)
 	unsigned int l, h;
 	unsigned long flags;
 	int maxlvt;
+
+	/*
+	 * On intel_mid, the resume flow is a bit different.
+	 * Refer explanation on lapic_suspend.
+	 */
+	if (intel_mid_identify_cpu() != 0) {
+		apic_write(APIC_TMICT, 10);
+		return;
+	}
 
 	if (!apic_pm_state.active)
 		return;
@@ -2269,8 +2299,13 @@ static void __cpuinit apic_pm_activate(void)
 static int __init init_lapic_sysfs(void)
 {
 	/* XXX: remove suspend/resume procs if !apic_pm_state.active? */
-	if (cpu_has_apic)
-		register_syscore_ops(&lapic_syscore_ops);
+#ifdef CONFIG_XEN
+	if (!xen_start_info)
+#endif
+	{
+		if (cpu_has_apic)
+			register_syscore_ops(&lapic_syscore_ops);
+	}
 
 	return 0;
 }

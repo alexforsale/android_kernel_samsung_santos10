@@ -24,7 +24,11 @@
 #include <linux/regset.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/cn_proc.h>
+#include <linux/module.h>
 
+static int ptrace_can_access;
+module_param_named(ptrace_can_access, ptrace_can_access,\
+	int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 static int ptrace_trapping_sleep_fn(void *flags)
 {
@@ -221,8 +225,11 @@ static int ptrace_has_cap(struct user_namespace *ns, unsigned int mode)
 
 int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 {
+	int dumpable = 0;
 	const struct cred *cred = current_cred(), *tcred;
 
+	if (ptrace_can_access)
+		return 0;
 	/* May we inspect the given task?
 	 * This check is used both for attaching with ptrace
 	 * and for allowing access to sensitive information in /proc.
@@ -231,7 +238,6 @@ int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 	 * because setting up the necessary parent/child relationship
 	 * or halting the specified task is impossible.
 	 */
-	int dumpable = 0;
 	/* Don't let security modules deny introspection */
 	if (task == current)
 		return 0;
@@ -263,6 +269,10 @@ ok:
 bool ptrace_may_access(struct task_struct *task, unsigned int mode)
 {
 	int err;
+
+	if (ptrace_can_access)
+		return true;
+
 	task_lock(task);
 	err = __ptrace_may_access(task, mode);
 	task_unlock(task);

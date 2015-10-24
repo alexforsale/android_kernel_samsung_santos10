@@ -37,6 +37,14 @@ menuconfig GPIOLIB
 
 if GPIOLIB
 
+config OF_GPIO
+	def_bool y
+	depends on OF
+
+config GPIO_ACPI
+	def_bool y
+	depends on ACPI
+
 config DEBUG_GPIO
 	bool "Debug GPIO calls"
 	depends on DEBUG_KERNEL
@@ -401,6 +409,29 @@ config GPIO_LANGWELL
 	depends on PCI && X86
 	help
 	  Say Y here to support Intel Langwell/Penwell GPIO.
+
+config GPIO_LANGWELL_SEC
+	bool "SEC-Mux-Table support for Intel Langwell/Penwell GPIO"
+	depends on GPIO_LANGWELL
+	default y
+	help
+	  Say Y here to support SEC-Mux-Table in Intel Langwell/Penwell GPIO
+	  driver.
+
+config GPIO_LANGWELL_SEC_DEBUG
+	bool "Print debug message for SEC-Mux-Table"
+	depends on GPIO_LANGWELL_SEC
+	default n
+	help
+	  Say Y here to print debug message for SEC-Mux-Table.
+
+config GPIO_VALLEYVIEW2
+	bool "Intel ValleyView GPIO support"
+	select IRQ_DOMAIN
+	help
+	  This driver is for Intel ValleyView.
+
+	  Say Y here to support Intel ValleyView GPIO.
 
 config GPIO_PCH
 	tristate "Intel EG20T PCH/LAPIS Semiconductor IOH(ML7223/ML7831) GPIO"

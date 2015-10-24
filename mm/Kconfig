@@ -379,3 +379,34 @@ config CLEANCACHE
 	  in a negligible performance hit.
 
 	  If unsure, say Y to enable cleancache
+
+config FADV_NOACTIVE
+	bool "fadvise noactive option support"
+	default n
+
+config DYNAMIC_MIN_FREE
+	bool "Enable dynamic min free change"
+	default n
+	help
+	  This feature helps kswapd to change extra_free_kbytes dynamically
+	  so that it can prevent power consumption increase due to kswpad.
+
+config  MIN_DMF_LAZY
+	depends on DYNAMIC_MIN_FREE
+	int "Minimum value of min_dmf_lazy_interval in msec"
+	default 1000
+
+config MAX_DMF_BUSY
+	depends on DYNAMIC_MIN_FREE
+	int "Maximum value of max_dmf_busy_interval in msec"
+	default 10000
+
+config MIN_DMF_RUN_LMT
+	depends on DYNAMIC_MIN_FREE
+	int "Minimum value of min_dmf_running_limit in msec"
+	default 1000
+
+config MIN_DMF_IDL_LMT
+	depends on DYNAMIC_MIN_FREE
+	int "Minimum value of min_dmf_lazy_interval in msec"
+	default 1000

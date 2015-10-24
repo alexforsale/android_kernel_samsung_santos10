@@ -414,14 +414,10 @@ Einval:
  * Set status of entry/binfmt_misc:
  * '1' enables, '0' disables and '-1' clears entry/binfmt_misc
  */
-static int parse_command(const char __user *buffer, size_t count)
+static inline int __parse_command(const char __user *buffer, size_t count)
 {
-	char s[4];
+	char s[count + 1];
 
-	if (!count)
-		return 0;
-	if (count > 3)
-		return -EINVAL;
 	if (copy_from_user(s, buffer, count))
 		return -EFAULT;
 	if (s[count-1] == '\n')
@@ -433,6 +429,16 @@ static int parse_command(const char __user *buffer, size_t count)
 	if (count == 2 && s[0] == '-' && s[1] == '1')
 		return 3;
 	return -EINVAL;
+}
+
+static int parse_command(const char __user *buffer, size_t count)
+{
+	if (!count)
+		return 0;
+	if (count > 3)
+		return -EINVAL;
+
+	return __parse_command(buffer, count);
 }
 
 /* generic stuff */

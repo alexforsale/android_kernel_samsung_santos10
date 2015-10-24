@@ -60,7 +60,7 @@ int ioremap_change_attr(unsigned long vaddr, unsigned long size,
  * caller shouldn't need to know that small detail.
  */
 static void __iomem *__ioremap_caller(resource_size_t phys_addr,
-		unsigned long size, unsigned long prot_val, void *caller)
+		unsigned long size, unsigned long prot_val, void *caller, int rw)
 {
 	unsigned long offset, vaddr;
 	resource_size_t pfn, last_pfn, last_addr;
@@ -145,6 +145,9 @@ static void __iomem *__ioremap_caller(resource_size_t phys_addr,
 		break;
 	}
 
+	if (!rw)
+		prot = __pgprot(prot.pgprot & ~_PAGE_RW);
+
 	/*
 	 * Ok, go for it..
 	 */
@@ -211,9 +214,25 @@ void __iomem *ioremap_nocache(resource_size_t phys_addr, unsigned long size)
 	unsigned long val = _PAGE_CACHE_UC_MINUS;
 
 	return __ioremap_caller(phys_addr, size, val,
-				__builtin_return_address(0));
+				__builtin_return_address(0), 1);
 }
 EXPORT_SYMBOL(ioremap_nocache);
+
+void __iomem *ioremap_nocache_ro(resource_size_t phys_addr, unsigned long size)
+{
+	/*
+	 * Ideally, this should be:
+	 *	pat_enabled ? _PAGE_CACHE_UC : _PAGE_CACHE_UC_MINUS;
+	 *
+	 * Till we fix all X drivers to use ioremap_wc(), we will use
+	 * UC MINUS.
+	 */
+	unsigned long val = _PAGE_CACHE_UC_MINUS;
+
+	return __ioremap_caller(phys_addr, size, val,
+				__builtin_return_address(0), 0);
+}
+EXPORT_SYMBOL(ioremap_nocache_ro);
 
 /**
  * ioremap_wc	-	map memory into CPU space write combined
@@ -229,7 +248,7 @@ void __iomem *ioremap_wc(resource_size_t phys_addr, unsigned long size)
 {
 	if (pat_enabled)
 		return __ioremap_caller(phys_addr, size, _PAGE_CACHE_WC,
-					__builtin_return_address(0));
+					__builtin_return_address(0), 1);
 	else
 		return ioremap_nocache(phys_addr, size);
 }
@@ -238,7 +257,7 @@ EXPORT_SYMBOL(ioremap_wc);
 void __iomem *ioremap_cache(resource_size_t phys_addr, unsigned long size)
 {
 	return __ioremap_caller(phys_addr, size, _PAGE_CACHE_WB,
-				__builtin_return_address(0));
+				__builtin_return_address(0), 1);
 }
 EXPORT_SYMBOL(ioremap_cache);
 
@@ -246,7 +265,7 @@ void __iomem *ioremap_prot(resource_size_t phys_addr, unsigned long size,
 				unsigned long prot_val)
 {
 	return __ioremap_caller(phys_addr, size, (prot_val & _PAGE_CACHE_MASK),
-				__builtin_return_address(0));
+				__builtin_return_address(0), 1);
 }
 EXPORT_SYMBOL(ioremap_prot);
 

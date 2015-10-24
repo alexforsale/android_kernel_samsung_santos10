@@ -101,7 +101,6 @@ extern int suid_dumpable;
 extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 extern int pid_max;
-extern int min_free_kbytes;
 extern int min_free_order_shift;
 extern int pid_max_min, pid_max_max;
 extern int sysctl_drop_caches;
@@ -140,6 +139,16 @@ static int maxolduid = 65535;
 static int minolduid;
 static int min_percpu_pagelist_fract = 8;
 
+#ifdef CONFIG_DYNAMIC_MIN_FREE
+#define MIN_DMF_LAZY	CONFIG_MIN_DMF_LAZY
+#define MAX_DMF_BUSY	CONFIG_MAX_DMF_BUSY
+#define MIN_DMF_RUN_LMT	CONFIG_MIN_DMF_RUN_LMT
+#define MIN_DMF_IDL_LMT	CONFIG_MIN_DMF_IDL_LMT
+static int min_dmf_lazy_interval = MIN_DMF_LAZY;
+static int max_dmf_busy_interval = MAX_DMF_BUSY;
+static int min_dmf_running_limit = MIN_DMF_RUN_LMT;
+static int min_dmf_idle_limit = MIN_DMF_IDL_LMT;
+#endif
 static int ngroups_max = NGROUPS_MAX;
 static const int cap_last_cap = CAP_LAST_CAP;
 
@@ -1196,10 +1205,54 @@ static struct ctl_table vm_table[] = {
 		.data		= &min_free_kbytes,
 		.maxlen		= sizeof(min_free_kbytes),
 		.mode		= 0644,
-		.proc_handler	= min_free_kbytes_sysctl_handler,
+		.proc_handler	= free_kbytes_sysctl_handler,
 		.extra1		= &zero,
 	},
 	{
+		.procname   = "extra_free_kbytes",
+		.data       = &extra_free_kbytes,
+		.maxlen     = sizeof(extra_free_kbytes),
+		.mode       = 0644,
+		.proc_handler   = free_kbytes_sysctl_handler,
+		.extra1     = &zero,
+	},
+#ifdef CONFIG_DYNAMIC_MIN_FREE
+	{
+		.procname   = "dmf_lazy_interval",
+		.data       = &dmf_lazy_interval,
+		.maxlen     = sizeof(dmf_lazy_interval),
+		.mode       = 0644,
+		.proc_handler   = dmf_sysctl_handler,
+		.extra1     = &min_dmf_lazy_interval,
+	},
+	{
+		.procname   = "dmf_busy_interval",
+		.data       = &dmf_busy_interval,
+		.maxlen     = sizeof(dmf_busy_interval),
+		.mode       = 0644,
+		.proc_handler   = dmf_sysctl_handler,
+		.extra1     = &zero,
+		.extra2     = &max_dmf_busy_interval,
+	},
+	{
+		.procname   = "dmf_running_limit",
+		.data       = &dmf_running_limit,
+		.maxlen     = sizeof(dmf_running_limit),
+		.mode       = 0644,
+		.proc_handler   = dmf_sysctl_handler,
+		.extra1     = &min_dmf_running_limit,
+	},
+	{
+		.procname   = "dmf_idle_limit",
+		.data       = &dmf_idle_limit,
+		.maxlen     = sizeof(dmf_idle_limit),
+		.mode       = 0644,
+		.proc_handler   = dmf_sysctl_handler,
+		.extra1     = &min_dmf_idle_limit,
+	},
+#endif /* CONFIG_DYNAMIC_MIN_FREE */
+	{
+
 		.procname	= "min_free_order_shift",
 		.data		= &min_free_order_shift,
 		.maxlen		= sizeof(min_free_order_shift),

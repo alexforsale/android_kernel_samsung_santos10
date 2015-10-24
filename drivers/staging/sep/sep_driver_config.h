@@ -83,11 +83,11 @@ held by the proccess (struct file) */
 	SHARED AREA  memory total size is 36K
 	it is divided is following:
 
-	SHARED_MESSAGE_AREA                     8K         }
+	SHARED_MESSAGE_AREA                     28K         }
 									}
-	STATIC_POOL_AREA                        4K         } MAPPED AREA ( 24 K)
+	STATIC_POOL_AREA                        0K         } MAPPED AREA ( 24 K)
 									}
-	DATA_POOL_AREA                          12K        }
+	DATA_POOL_AREA                          0K        }
 
 	SYNCHRONIC_DMA_TABLES_AREA              29K
 
@@ -117,16 +117,16 @@ held by the proccess (struct file) */
 	the maximum length of the message - the rest of the message shared
 	area will be dedicated to the dma lli tables
 */
-#define SEP_DRIVER_MAX_MESSAGE_SIZE_IN_BYTES			(8 * 1024)
+#define SEP_DRIVER_MAX_MESSAGE_SIZE_IN_BYTES			(28 * 1024)
 
 /* the size of the message shared area in pages */
-#define SEP_DRIVER_MESSAGE_SHARED_AREA_SIZE_IN_BYTES		(8 * 1024)
+#define SEP_DRIVER_MESSAGE_SHARED_AREA_SIZE_IN_BYTES		(28 * 1024)
 
 /* the size of the data pool static area in pages */
-#define SEP_DRIVER_STATIC_AREA_SIZE_IN_BYTES			(4 * 1024)
+#define SEP_DRIVER_STATIC_AREA_SIZE_IN_BYTES			(0)
 
 /* the size of the data pool shared area size in pages */
-#define SEP_DRIVER_DATA_POOL_SHARED_AREA_SIZE_IN_BYTES		(16 * 1024)
+#define SEP_DRIVER_DATA_POOL_SHARED_AREA_SIZE_IN_BYTES		(0)
 
 /* the size of the message shared area in pages */
 #define SYNCHRONIC_DMA_TABLES_AREA_SIZE_BYTES	(1024 * 29)
@@ -156,6 +156,11 @@ held by the proccess (struct file) */
 
 /* message area offset */
 #define SEP_DRIVER_MESSAGE_AREA_OFFSET_IN_BYTES			0
+
+#define SEP_DRIVER_MESSAGE_START_AFTER_OPCODE			5
+
+#define SEP_SHARED_AREA_PHYSADDRESS_OFFSET \
+	(SEP_DRIVER_MESSAGE_START_AFTER_OPCODE + 6)
 
 /* static pool area offset */
 #define SEP_DRIVER_STATIC_AREA_OFFSET_IN_BYTES \
@@ -236,6 +241,9 @@ held by the proccess (struct file) */
 /* bit that lock access to the poll  - after send_command */
 #define SEP_WORKING_LOCK_BIT                                  1
 
+/* bit that lock access to RPMB */
+#define SEP_RPMB_ACCESS_LOCK_BIT                              2
+
 /* the token that defines the static pool address address */
 #define SEP_STATIC_POOL_VAL_TOKEN                             0xABBAABBA
 
@@ -249,14 +257,18 @@ held by the proccess (struct file) */
 #define WAIT_TIME 10
 
 /* Delay for pm runtime suspend (reduces pm thrashing with bursty traffic */
-#define SUSPEND_DELAY 10
+#define SUSPEND_DELAY 20
 
 /* Number of delays to wait until scu boots after runtime resume */
-#define SCU_DELAY_MAX 50
+#define SCU_DELAY_MAX 2000
 
 /* Delay for each iteration (usec) wait for scu boots after runtime resume */
-#define SCU_DELAY_ITERATION 10
+#define SCU_MAX_DELAY_ITERATION 1000
+#define SCU_MIN_DELAY_ITERATION 100
 
+/* Wait to guarantee at probe time that chaabi has completed its boot */
+#define CHAABI_BOOT_TIME_MIN_US 2000
+#define CHAABI_BOOT_TIME_MAX_US 2500
 
 /*
  * Bits used in struct sep_call_status to check that
@@ -294,5 +306,6 @@ held by the proccess (struct file) */
  * testing
  */
 #define SEP_ENABLE_RUNTIME_PM
+
 
 #endif /* SEP DRIVER CONFIG */

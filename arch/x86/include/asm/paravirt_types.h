@@ -294,6 +294,8 @@ struct pv_mmu_ops {
 	struct paravirt_callee_save pgd_val;
 	struct paravirt_callee_save make_pgd;
 
+	void (*clear_highpage)(struct page *page);
+	void (*copy_highpage)(struct page *to, struct page *from);
 #if PAGETABLE_LEVELS >= 3
 #ifdef CONFIG_X86_PAE
 	void (*set_pte_atomic)(pte_t *ptep, pte_t pteval);

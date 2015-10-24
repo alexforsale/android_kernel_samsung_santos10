@@ -1315,4 +1315,5 @@ void __cpuinit cpu_init(void)
 	fpu_init();
 	xsave_init();
 }
+EXPORT_SYMBOL(idt_table);
 #endif
