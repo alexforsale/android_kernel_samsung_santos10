@@ -622,7 +622,6 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.bat_irq_attr =
 		IRQF_TRIGGER_FALLING,
 	.cable_check_type =
-		SEC_BATTERY_CABLE_CHECK_NOUSBCHARGE |
 		SEC_BATTERY_CABLE_CHECK_PSY,
 	.cable_source_type =
 		SEC_BATTERY_CABLE_SOURCE_EXTERNAL |
