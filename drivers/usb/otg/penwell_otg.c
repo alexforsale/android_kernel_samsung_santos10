@@ -1908,6 +1908,9 @@ static int penwell_otg_charger_det_clt(void)
 	case EXTCON_TA:
 		retval = CHRG_DCP;
 		break;
+	case EXTCON_CHARGE_DOWNSTREAM:
+		retval = CHRG_CDP;
+		break;
 	case EXTCON_USB:
 	default:
 		retval = CHRG_SDP;
@@ -4801,6 +4804,7 @@ struct sec_cable {
 
 static struct sec_cable support_cable_list[] = {
 	{ .cable_type = EXTCON_USB, },
+	{ .cable_type = EXTCON_CHARGE_DOWNSTREAM, },
 	{ .cable_type = EXTCON_TA, },
 };
 
@@ -4827,12 +4831,18 @@ static void sec_cable_event_worker(struct work_struct *work)
 
 	pr_info("penwell otg: cable state: %d cabe_type: %s\n",
 		cable->cable_state,
-		cable->cable_type == EXTCON_USB ? "USB" : "TA");
+		cable->cable_type == EXTCON_TA ? "TA" : "USB");
 
 	pnw->sec_cable_type = cable->cable_type;
 
-	if (cable->cable_type == EXTCON_USB)
+	switch (pnw->sec_cable_type) {
+	case EXTCON_USB:
+	case EXTCON_CHARGE_DOWNSTREAM:
 		penwell_vbus_session_valid(pnw, cable->cable_state);
+		break;
+	default:
+		break;
+	}
 }
 
 static int sec_cable_notifier(struct notifier_block *nb,

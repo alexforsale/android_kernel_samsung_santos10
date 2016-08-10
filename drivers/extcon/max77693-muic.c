@@ -966,8 +966,10 @@ static int max77693_muic_handle_attach(struct max77693_muic_info *info,
 	case ADC_OPEN:
 		switch (chgtyp) {
 		case CHGTYP_USB:
-		case CHGTYP_DOWNSTREAM_PORT:
 			new_state = BIT(EXTCON_USB);
+			break;
+		case CHGTYP_DOWNSTREAM_PORT:
+			new_state = BIT(EXTCON_CHARGE_DOWNSTREAM);
 			break;
 		case CHGTYP_DEDICATED_CHGR:
 		case CHGTYP_500MA:

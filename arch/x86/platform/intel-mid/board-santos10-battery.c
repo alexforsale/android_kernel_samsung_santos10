@@ -59,6 +59,7 @@ struct sec_bat_cable {
 static struct sec_bat_cable support_cable_list[] = {
 	{ .cable_type = EXTCON_TA, },
 	{ .cable_type = EXTCON_USB, },
+	{ .cable_type = EXTCON_CHARGE_DOWNSTREAM, },
 	{ .cable_type = EXTCON_CEA936_CHG, },
 	{ .cable_type = EXTCON_DESKDOCK_VB, },
 	{ .cable_type = EXTCON_CARDOCK_VB, },
@@ -81,7 +82,7 @@ static sec_charging_current_t charging_current_table[] = {
 	{460,	460,	300,	40*60},	/* POWER_SUPPLY_TYPE_USB */
 	{460,	460,	300,	40*60},	/* POWER_SUPPLY_TYPE_USB_INVAL */
 	{460,	460,	300,	40*60},	/* POWER_SUPPLY_TYPE_USB_DCP */
-	{460,	460,	300,	40*60},	/* POWER_SUPPLY_TYPE_USB_CDP */
+	{1460,	1460,	300,	40*60},	/* POWER_SUPPLY_TYPE_USB_CDP */
 	{460,	460,	300,	40*60},	/* POWER_SUPPLY_TYPE_USB_ACA */
 	{2000,	2100,	300,	40*60},	/* POWER_SUPPLY_TYPE_MISC */
 	{0,	0,	0,	0},	/* POWER_SUPPLY_TYPE_CARDOCK */
@@ -342,6 +343,7 @@ static bool sec_bat_check_cable_result_callback(
 
 	switch (cable_type) {
 	case POWER_SUPPLY_TYPE_USB:
+	case POWER_SUPPLY_TYPE_USB_CDP:
 		pr_info("%s set vbus applied\n",
 			__func__);
 		break;
@@ -764,6 +766,12 @@ static void sec_bat_cable_event_worker(struct work_struct *work)
 	case EXTCON_SMARTDOCK_USB:
 		if (cable->cable_state)
 			current_cable_type = POWER_SUPPLY_TYPE_USB;
+		else
+			current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
+		break;
+	case EXTCON_CHARGE_DOWNSTREAM:
+		if (cable->cable_state)
+			current_cable_type = POWER_SUPPLY_TYPE_USB_CDP;
 		else
 			current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
 		break;
