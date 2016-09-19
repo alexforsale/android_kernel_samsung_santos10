@@ -3851,10 +3851,7 @@ static ssize_t light_on_touch_store(struct device *dev,
 
 	atomic_set(&ts_data->light_on_touch, val);
 
-	// Reset light status if keypad enabled
-	if (!val && atomic_read(&ts_data->keypad_enable))
-		bl_pdata->keyled_set_power(true);
-	else
+	if (val)
 		bl_pdata->keyled_set_power(false);
 
 	return count;
