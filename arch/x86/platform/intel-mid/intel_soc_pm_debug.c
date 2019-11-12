@@ -521,10 +521,11 @@ static void pmu_dump_command_log(void)
 			printk(KERN_ERR "Invalid PM_CMD\n");
 			break;
 		}
-		for (k = 0; k < 4; k++)
+		for (k = 0; k < 4; k++){
 			printk(KERN_ERR"pmu2_states[%d]: 0x%08lx\n",
 				k, log->pm_ssc.pmu2_states[k]);
 			printk(KERN_ERR"\n");
+                }
 	}
 }
 
@@ -679,19 +680,21 @@ static unsigned long pmu_dev_res_print(int index, unsigned long *precision,
 	t =  cpu_clock(raw_smp_processor_id());
 
 	if (dev_state) {
-		/* print for d0ix */
-		if ((mid_pmu_cxt->pmu_dev_res[index].state != PCI_D0))
-			delta_time = t -
-				mid_pmu_cxt->pmu_dev_res[index].d0i3_entry;
+          /* print for d0ix */
+          if ((mid_pmu_cxt->pmu_dev_res[index].state != PCI_D0)){
+            delta_time = t -
+              mid_pmu_cxt->pmu_dev_res[index].d0i3_entry;
 
-			delta_time += mid_pmu_cxt->pmu_dev_res[index].d0i3_acc;
+            delta_time += mid_pmu_cxt->pmu_dev_res[index].d0i3_acc;
+          }
 	} else {
-		/* print for d0i0 */
-		if ((mid_pmu_cxt->pmu_dev_res[index].state == PCI_D0))
-			delta_time = t -
-				mid_pmu_cxt->pmu_dev_res[index].d0i0_entry;
+          /* print for d0i0 */
+          if ((mid_pmu_cxt->pmu_dev_res[index].state == PCI_D0)){
+            delta_time = t -
+              mid_pmu_cxt->pmu_dev_res[index].d0i0_entry;
 
-		delta_time += mid_pmu_cxt->pmu_dev_res[index].d0i0_acc;
+            delta_time += mid_pmu_cxt->pmu_dev_res[index].d0i0_acc;
+          }
 	}
 
 	t -= mid_pmu_cxt->pmu_dev_res[index].start;
