@@ -3919,52 +3919,6 @@ static int __devinit init_bl_timeout(struct mxt_data *ts_data)
 	return 0;
 }
 
-static ssize_t enabled_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-	unsigned int val;
-
-	val = (ts_data->mxt_enabled ? 1 : 0);
-
-	return sprintf(buf, "%d\n", val);
-}
-
-static ssize_t enabled_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-	unsigned int val = 0;
-
-	sscanf(buf, "%d", &val);
-	val = (val == 0 ? 0 : 1);
-
-	if (val == 0)
-		mxt_stop(ts_data);
-	else
-		mxt_start(ts_data);
-
-	return count;
-}
-
-static DEVICE_ATTR(enabled, S_IRUGO|S_IWUSR, enabled_show,
-	enabled_store);
-
-static int __devinit init_enabled(struct input_dev *dev)
-{
-	struct device *device = &dev->dev;
-
-	if (!device) {
-		dev_err(dev, "Failed to find input dev\n");
-		return -1;
-	}
-
-	device_create_file(device, &dev_attr_enabled);
-
-	return 0;
-}
-
 static ssize_t touchkey_threshold_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -4206,11 +4160,6 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	error = input_register_device(input_dev);
 	if (unlikely(error))
 		goto err_register_input_device;
-
-	error = init_enabled(input_dev);
-	if (unlikely(error)) {
-		dev_err(&client->dev, "Failed to make enabled sysfs\n");
-	}
 
 	error = mxt_fw_updater(data, NORMAL);
 	if (unlikely(error)) {
