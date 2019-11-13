@@ -368,9 +368,6 @@ struct mxt_data {
 	u8 t9_amp;
 	u8 t70_touch_event;
 	atomic_t keypad_enable;
-	atomic_t large_keys;
-	atomic_t light_on_touch;
-	atomic_t bl_timeout;
 };
 
 #if defined(CONFIG_TOUCHSCREEN_ATMEL_DEBUG)
@@ -388,46 +385,6 @@ do {									\
 	if (data->pdata->log_on)					\
 		dev_info(&(_data)->client->dev, __VA_ARGS__);		\
 } while (0)								\
-
-struct sec_ts_platform_data *bl_pdata = NULL;
-
-static struct timer_list bl_timer;
-static void bl_off(struct work_struct *bl_off_work);
-static DECLARE_WORK(bl_off_work, bl_off);
-
-static void bl_off(struct work_struct *bl_off_work)
-{
-	if (bl_pdata == NULL)
-		return;
-
-	bl_pdata->keyled_set_power(false);
-}
-
-void bl_timer_callback(unsigned long data)
-{
-	schedule_work(&bl_off_work);
-}
-
-static void bl_set_timeout(int timeout) {
-	if (timeout > 0) {
-		mod_timer(&bl_timer, jiffies + msecs_to_jiffies(timeout));
-	}
-}
-
-static void set_keyled_power(bool on, struct mxt_data *data) {
-	if (bl_pdata == NULL)
-		return;
-
-	// Do nothing if not light on touch key only or keypad disabled
-	if (!atomic_read(&data->light_on_touch) || !atomic_read(&data->keypad_enable))
-		return;
-
-	bl_pdata->keyled_set_power(on);
-
-	// Set timeout if light on
-	if (on)
-		bl_set_timeout(atomic_read(&data->bl_timeout));
-}
 
 static int mxt_wait_for_chg(struct mxt_data *data, u16 time)
 {
@@ -1195,12 +1152,8 @@ static void mxt_treat_T15_object(struct mxt_data *data,
 	for (i = 0 ; i < data->pdata->key_size ; i++) {
 		state = input_message & touch_key[i].mask;
 		if (state != data->mxt_key_state[i]) {
-			// Handle dummy keys only if large_keys is enabled
-			if (atomic_read(&data->large_keys) || (touch_key[i].dummy == false)) {
-				set_keyled_power(true, data);
-
-				data->mxt_key_state[i] = state;
-				input_report_key(data->input_dev, touch_key[i].code,
+			data->mxt_key_state[i] = state;
+			input_report_key(data->input_dev, touch_key[i].code,
 									state);
 			input_sync(data->input_dev);
 			dev_dbg(&data->client->dev, "key: %s: %d\n",
@@ -2367,8 +2320,6 @@ static void mxt_early_suspend(struct early_suspend *h)
 	struct mxt_data *data = container_of(h, struct mxt_data, early_suspend);
 	mutex_lock(&data->input_dev->mutex);
 
-	set_keyled_power(false, data);
-
 	mxt_stop(data);
 
 	mutex_unlock(&data->input_dev->mutex);
@@ -2381,8 +2332,6 @@ static void mxt_late_resume(struct early_suspend *h)
 	mutex_lock(&data->input_dev->mutex);
 
 	mxt_start(data);
-
-	set_keyled_power(true, data);
 
 	mutex_unlock(&data->input_dev->mutex);
 	dev_info(&data->client->dev, "late_resume done\n");
@@ -3746,182 +3695,6 @@ static int __devinit init_sec_keypad_enable(struct mxt_data *ts_data)
 	return 0;
 }
 
-static ssize_t large_keys_show(struct device *dev,
-					struct device_attribute *attr, char *buf)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-
-	return sprintf(buf, "%d\n", atomic_read(&ts_data->large_keys));
-}
-
-static ssize_t large_keys_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-	unsigned int val = 0;
-
-	sscanf(buf, "%d", &val);
-	val = (val == 0 ? 0 : 1);
-
-	atomic_set(&ts_data->large_keys, val);
-
-	return count;
-}
-
-static DEVICE_ATTR(large_keys, S_IRUGO|S_IWUSR, large_keys_show,
-	large_keys_store);
-
-static int __devinit init_large_keys(struct mxt_data *ts_data)
-{
-	struct device *touchkey_dev = ts_data->pdata->key_dev;
-
-	if (!touchkey_dev) {
-		dev_err(&ts_data->client->dev, "Failed to find fac touchkey dev\n");
-		return -1;
-	}
-
-	if (dev_set_drvdata(touchkey_dev, ts_data) < 0)
-		return -1;
-
-	device_create_file(touchkey_dev, &dev_attr_large_keys);
-
-	return 0;
-}
-
-static ssize_t brightness_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	int input, ret;
-
-	// Do nothing if light on touch key only
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-	if (atomic_read(&ts_data->light_on_touch))
-		return count;
-
-	ret = kstrtoint(buf, 10, &input);
-	if (ret < 0)
-		return ret;
-
-	if (input == 1)
-		bl_pdata->keyled_set_power(true);
-	else
-		bl_pdata->keyled_set_power(false);
-
-	return count;
-}
-
-static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR | S_IWGRP, NULL,
-	brightness_store);
-
-static int __devinit init_brightness(struct mxt_data *ts_data)
-{
-	struct device *touchkey_dev = ts_data->pdata->key_dev;
-
-	if (!touchkey_dev) {
-		dev_err(&ts_data->client->dev, "Failed to find fac touchkey dev\n");
-		return -1;
-	}
-
-	if (dev_set_drvdata(touchkey_dev, ts_data) < 0)
-		return -1;
-
-	device_create_file(touchkey_dev, &dev_attr_brightness);
-
-	return 0;
-}
-
-static ssize_t light_on_touch_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-
-	return sprintf(buf, "%d\n", atomic_read(&ts_data->light_on_touch));
-}
-
-static ssize_t light_on_touch_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-	unsigned int val = 0;
-
-	sscanf(buf, "%d", &val);
-
-	atomic_set(&ts_data->light_on_touch, val);
-
-	// Reset light status if keypad enabled
-	if (!val && atomic_read(&ts_data->keypad_enable))
-		bl_pdata->keyled_set_power(true);
-	else
-		bl_pdata->keyled_set_power(false);
-
-	return count;
-}
-
-static DEVICE_ATTR(light_on_touch, S_IRUGO|S_IWUSR, light_on_touch_show,
-	light_on_touch_store);
-
-static int __devinit init_light_on_touch(struct mxt_data *ts_data)
-{
-	struct device *touchkey_dev = ts_data->pdata->key_dev;
-
-	if (!touchkey_dev) {
-		dev_err(&ts_data->client->dev, "Failed to find fac touchkey dev\n");
-		return -1;
-	}
-
-	if (dev_set_drvdata(touchkey_dev, ts_data) < 0)
-		return -1;
-
-	device_create_file(touchkey_dev, &dev_attr_light_on_touch);
-
-	return 0;
-}
-
-static ssize_t bl_timeout_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-
-	return sprintf(buf, "%d\n", atomic_read(&ts_data->bl_timeout));
-}
-
-static ssize_t bl_timeout_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	struct mxt_data *ts_data = dev_get_drvdata(dev);
-	unsigned int val = 0;
-
-	sscanf(buf, "%d", &val);
-
-	atomic_set(&ts_data->bl_timeout, val);
-
-	return count;
-}
-
-static DEVICE_ATTR(bl_timeout, S_IRUGO|S_IWUSR, bl_timeout_show,
-	bl_timeout_store);
-
-static int __devinit init_bl_timeout(struct mxt_data *ts_data)
-{
-	struct device *touchkey_dev = ts_data->pdata->key_dev;
-
-	if (!touchkey_dev) {
-		dev_err(&ts_data->client->dev, "Failed to find fac touchkey dev\n");
-		return -1;
-	}
-
-	if (dev_set_drvdata(touchkey_dev, ts_data) < 0)
-		return -1;
-
-	device_create_file(touchkey_dev, &dev_attr_bl_timeout);
-
-	return 0;
-}
-
 static ssize_t touchkey_threshold_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -4099,9 +3872,6 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	input_dev->close = mxt_input_close;
 
 	atomic_set(&data->keypad_enable, 1);
-	atomic_set(&data->large_keys, 1);
-	atomic_set(&data->light_on_touch, 0);
-	atomic_set(&data->bl_timeout, 1500);
 
 	if (data->pdata->key_size > 0) {
 		set_bit(EV_KEY, input_dev->evbit);
@@ -4113,26 +3883,6 @@ static int __devinit mxt_probe(struct i2c_client *client,
 		error = init_sec_keypad_enable(data);
 		if (unlikely(error)) {
 			dev_err(&client->dev, "Failed to make keypad_enable sysfs\n");
-		}
-
-		error = init_large_keys(data);
-		if (unlikely(error)) {
-			dev_err(&client->dev, "Failed to make large_keys sysfs\n");
-		}
-
-		error = init_brightness(data);
-		if (unlikely(error)) {
-			dev_err(&client->dev, "Failed to make brightness sysfs\n");
-		}
-
-		error = init_light_on_touch(data);
-		if (unlikely(error)) {
-			dev_err(&client->dev, "Failed to make light_on_touch sysfs\n");
-		}
-
-		error = init_bl_timeout(data);
-		if (unlikely(error)) {
-			dev_err(&client->dev, "Failed to make bl_timeout sysfs\n");
 		}
 	}
 
@@ -4208,9 +3958,6 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	complete_all(&data->init_done);
 	dev_info(&client->dev, "Ateml MXT1188S probe done.\n");
 
-	bl_pdata = data->pdata;
-	setup_timer(&bl_timer, bl_timer_callback, 0);
-
 	return 0;
 
 #if defined(CONFIG_TOUCHSCREEN_ATMEL_DEBUG)
@@ -4260,8 +4007,6 @@ static int __devexit mxt_remove(struct i2c_client *client)
 	if (data->pdata->platform_deinit)
 		data->pdata->platform_deinit();
 	kfree(data);
-
-	del_timer(&bl_timer);
 
 	return 0;
 }

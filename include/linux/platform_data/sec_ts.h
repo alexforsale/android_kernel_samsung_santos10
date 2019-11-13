@@ -110,7 +110,6 @@ struct sec_ts_platform_data {
 	void (*set_power)(bool);
 	int (*platform_init)(void);
 	int (*platform_deinit)(void);
-	void (*keyled_set_power)(bool);
 };
 
 /* dummy touch key define */

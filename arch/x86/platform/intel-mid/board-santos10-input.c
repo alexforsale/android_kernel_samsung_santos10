@@ -413,26 +413,6 @@ static struct touch_key santos10_touch_keys[] = {
 	},
 };
 
-/* touch key led */
-enum {
-	GPIO_TSK_EN = 0,
-};
-
-static struct gpio keyled_gpios[] = {
-	[GPIO_TSK_EN] = {
-		.flags = GPIOF_OUT_INIT_LOW,
-		.label = "TOUCHKEY_LED_EN",
-	}
-};
-
-static void santos10_keyled_set_power(bool on)
-{
-	if (on)
-		gpio_set_value(keyled_gpios[GPIO_TSK_EN].gpio, 1);
-	else
-		gpio_set_value(keyled_gpios[GPIO_TSK_EN].gpio, 0);
-}
-
 static struct sec_ts_platform_data santos10_mxt1188s_ts_pdata = {
 	.fw_name		= "atmel/p5200.fw",
 	.ext_fw_name		= "/mnt/sdcard/p5200.fw",
@@ -446,7 +426,6 @@ static struct sec_ts_platform_data santos10_mxt1188s_ts_pdata = {
 	.set_power		= santos10_atmel_set_power,
 	.platform_init		= santos10_platform_init,
 	.platform_deinit	= santos10_platform_deinit,
-	.keyled_set_power	= santos10_keyled_set_power,
 };
 
 void *santos10_mxt1188s_ts_platform_data(void *info)
@@ -474,6 +453,46 @@ void *santos10_mxt1188s_ts_platform_data(void *info)
 
 	return &santos10_mxt1188s_ts_pdata;
 }
+
+/* touch key led */
+enum {
+	GPIO_TSK_EN = 0,
+};
+
+static struct gpio keyled_gpios[] = {
+	[GPIO_TSK_EN] = {
+		.flags = GPIOF_OUT_INIT_LOW,
+		.label = "TOUCHKEY_LED_EN",
+	}
+};
+
+static void santos10_keyled_set_power(bool on)
+{
+	if (on)
+		gpio_set_value(keyled_gpios[GPIO_TSK_EN].gpio, 1);
+	else
+		gpio_set_value(keyled_gpios[GPIO_TSK_EN].gpio, 0);
+}
+
+static ssize_t keyled_control(struct device *dev, struct device_attribute *attr,
+						const char *buf, size_t size)
+{
+	int input, ret;
+
+	ret = kstrtoint(buf, 10, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input == 1)
+		santos10_keyled_set_power(true);
+	else
+		santos10_keyled_set_power(false);
+
+	return size;
+}
+
+static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR | S_IWGRP, NULL,
+								keyled_control);
 
 #if defined(CONFIG_TOUCHSCREEN_SEC_FACTORY_TEST)
 
@@ -563,6 +582,7 @@ static struct attribute *touchkey_attributes[] = {
 	&dev_attr_touchkey_menu.attr,
 	&dev_attr_touchkey_back.attr,
 #endif
+	&dev_attr_brightness.attr,
 	NULL,
 };
 
