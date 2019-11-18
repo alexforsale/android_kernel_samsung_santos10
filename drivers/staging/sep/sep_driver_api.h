@@ -361,7 +361,7 @@ struct sep_private_data {
  *
  * This function will removes information about transaction from the queue.
  */
-inline void sep_queue_status_remove(struct sep_device *sep,
+void sep_queue_status_remove(struct sep_device *sep,
 				      struct sep_queue_info **queue_elem);
 /**
  * sep_queue_status_add - Adds transaction to status queue
@@ -375,7 +375,7 @@ inline void sep_queue_status_remove(struct sep_device *sep,
  * This function adds information about about transaction started to the status
  * queue.
  */
-inline struct sep_queue_info *sep_queue_status_add(
+struct sep_queue_info *sep_queue_status_add(
 						struct sep_device *sep,
 						u32 opcode,
 						u32 size,
